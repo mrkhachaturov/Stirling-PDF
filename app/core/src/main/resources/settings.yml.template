@@ -196,6 +196,15 @@ system:
     organizationName: Stirling-PDF # Organization name for generated certificates
     validity: 365 # Certificate validity in days
     regenerateOnStartup: false # Generate new certificate on each startup
+  userCertificate:
+    issuer: selfsigned # Source of per-user signing certificates: 'selfsigned' (default, unchanged behaviour) or 'stepca' (enrol from a step-ca CA)
+    caUrl: "" # step-ca base URL, e.g. https://step-ca.internal:9000 (required when issuer is 'stepca')
+    provisioner: "" # step-ca OIDC provisioner name (informational; used in diagnostics)
+    keySize: 2048 # RSA key size for generated user signing keys
+    caBundlePath: "" # Optional path to a PEM bundle trusted when calling step-ca over TLS (blank = JVM default trust store)
+    requestTimeoutSeconds: 15 # Connection and read timeout for calls to step-ca
+    requiredGroup: "" # Only users whose OIDC token lists this group are enrolled a signing certificate (blank = no app-side check; authentication is not authorization to sign)
+    requiredGroupClaim: groups # Name of the OIDC token claim listing the user's groups
   html:
     urlSecurity:
       enabled: true # Enable URL security restrictions for HTML processing
