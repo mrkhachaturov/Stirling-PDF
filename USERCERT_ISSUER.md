@@ -66,6 +66,9 @@ is therefore:
   the login still succeeds; the failure is logged and retried at the next login. Re-enrolment simply
   overwrites the stored certificate, which is safe — existing PDF signatures embed their own
   certificate and validate against that, not against the stored row.
+- **Concurrent logins don't duplicate.** `user_id` is unique in the database: two simultaneous
+  first-logins of the same user resolve to a single certificate (the losing insert is a no-op logged
+  at debug), and any later re-enrolment is an in-place overwrite.
 
 **Consequence for the CA configuration:** the leaf lifetime must comfortably exceed the typical
 interval between a user's logins, or a returning user could find an expired certificate before the
