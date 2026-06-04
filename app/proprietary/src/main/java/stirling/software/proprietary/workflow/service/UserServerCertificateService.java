@@ -4,6 +4,7 @@ import java.io.*;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -188,6 +189,39 @@ public class UserServerCertificateService {
     @Transactional(readOnly = true)
     public boolean hasUserCertificate(Long userId) {
         return certificateRepository.findByUserId(userId).isPresent();
+    }
+
+    /**
+     * Whether the user should be (re-)enrolled a certificate: true if none exists, it has already
+     * expired, or it is in the last third of its validity window.
+     *
+     * <p>Used by the login-time enrolment path so externally issued (e.g. step-ca) certificates
+     * stay fresh. Such certificates cannot be re-minted later at signing time — that runs outside
+     * the user's OIDC security context — so login is the only opportunity to renew them before they
+     * lapse. The leaf lifetime on the CA must therefore exceed the typical interval between logins.
+     */
+    @Transactional(readOnly = true)
+    public boolean needsEnrollment(Long userId) {
+        Optional<UserServerCertificateEntity> existing = certificateRepository.findByUserId(userId);
+        if (existing.isEmpty()) {
+            return true;
+        }
+        UserServerCertificateEntity cert = existing.get();
+        LocalDateTime validTo = cert.getValidTo();
+        if (validTo == null) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (!now.isBefore(validTo)) {
+            return true; // already expired
+        }
+        LocalDateTime validFrom = cert.getValidFrom();
+        if (validFrom != null && validFrom.isBefore(validTo)) {
+            Duration total = Duration.between(validFrom, validTo);
+            Duration remaining = Duration.between(now, validTo);
+            return remaining.compareTo(total.dividedBy(3)) < 0; // within the last third of validity
+        }
+        return false;
     }
 
     /** Get certificate info (without keystore data) */
