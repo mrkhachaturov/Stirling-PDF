@@ -14,6 +14,7 @@ import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -164,6 +165,49 @@ class UserServerCertificateServiceTest {
 
         assertThat(ks).isNotNull();
         assertThat(ks.aliases().hasMoreElements()).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // needsEnrollment — missing / expired / last-third triggers re-enrolment
+    // -------------------------------------------------------------------------
+
+    private UserServerCertificateEntity certValid(LocalDateTime from, LocalDateTime to) {
+        UserServerCertificateEntity entity = new UserServerCertificateEntity();
+        entity.setValidFrom(from);
+        entity.setValidTo(to);
+        return entity;
+    }
+
+    @Test
+    void needsEnrollment_trueWhenAbsent() {
+        when(certificateRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        assertThat(service.needsEnrollment(1L)).isTrue();
+    }
+
+    @Test
+    void needsEnrollment_trueWhenExpired() {
+        LocalDateTime now = LocalDateTime.now();
+        when(certificateRepository.findByUserId(1L))
+                .thenReturn(Optional.of(certValid(now.minusDays(40), now.minusDays(10))));
+        assertThat(service.needsEnrollment(1L)).isTrue();
+    }
+
+    @Test
+    void needsEnrollment_trueWhenInLastThird() {
+        // 30-day cert, 26 days elapsed -> 4 days left (< 10 = one third)
+        LocalDateTime now = LocalDateTime.now();
+        when(certificateRepository.findByUserId(1L))
+                .thenReturn(Optional.of(certValid(now.minusDays(26), now.plusDays(4))));
+        assertThat(service.needsEnrollment(1L)).isTrue();
+    }
+
+    @Test
+    void needsEnrollment_falseWhenFresh() {
+        // 30-day cert, just issued -> ~30 days left (> 10)
+        LocalDateTime now = LocalDateTime.now();
+        when(certificateRepository.findByUserId(1L))
+                .thenReturn(Optional.of(certValid(now.minusMinutes(1), now.plusDays(30))));
+        assertThat(service.needsEnrollment(1L)).isFalse();
     }
 
     // -------------------------------------------------------------------------

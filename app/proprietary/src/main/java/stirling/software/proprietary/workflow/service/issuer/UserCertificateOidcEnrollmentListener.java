@@ -41,49 +41,59 @@ public class UserCertificateOidcEnrollmentListener {
             return;
         }
 
-        Authentication authentication = event.getAuthentication();
-        if (authentication == null
-                || !(authentication.getPrincipal() instanceof OidcUser oidcUser)) {
-            return;
-        }
-        if (oidcUser.getIdToken() == null) {
-            return;
-        }
-        String idToken = oidcUser.getIdToken().getTokenValue();
-        if (idToken == null || idToken.isBlank()) {
-            return;
-        }
-
-        String username = oidcUser.getName();
-
-        // Authentication is not authorization to sign: read-only users must not be provisioned a
-        // signing certificate. Skip anyone outside the configured signing group. Read the group
-        // from the ID token specifically — that is the same source step-ca's leaf template gates on
-        // (.Token.*), since the ID token is what we forward as the one-time token.
-        if (!UserCertificateGroupPolicy.isEligible(
-                settings.getRequiredGroup(),
-                settings.getRequiredGroupClaim(),
-                oidcUser.getIdToken().getClaims())) {
-            log.debug(
-                    "User {} is not in the required signing group '{}'; skipping certificate"
-                            + " enrolment",
-                    username,
-                    settings.getRequiredGroup());
-            return;
-        }
-
+        // Enrolment must NEVER break login. The whole body is guarded: a step-ca outage, a token
+        // problem, a concurrent-login unique-constraint clash, or any unexpected error is logged
+        // and
+        // simply retried at the next login. Signing later refuses an absent/expired certificate
+        // with
+        // a clear error rather than substituting a different identity.
+        String username = null;
         try {
+            Authentication authentication = event.getAuthentication();
+            if (authentication == null
+                    || !(authentication.getPrincipal() instanceof OidcUser oidcUser)) {
+                return;
+            }
+            if (oidcUser.getIdToken() == null) {
+                return;
+            }
+            String idToken = oidcUser.getIdToken().getTokenValue();
+            if (idToken == null || idToken.isBlank()) {
+                return;
+            }
+            username = oidcUser.getName();
+
+            // Authentication is not authorization to sign: read-only users must not be provisioned
+            // a
+            // signing certificate. Skip anyone outside the configured signing group. Read the group
+            // from the ID token specifically — the same source step-ca's leaf template gates on
+            // (.Token.*), since the ID token is what we forward as the one-time token.
+            if (!UserCertificateGroupPolicy.isEligible(
+                    settings.getRequiredGroup(),
+                    settings.getRequiredGroupClaim(),
+                    oidcUser.getIdToken().getClaims())) {
+                log.debug(
+                        "User {} is not in the required signing group '{}'; skipping certificate"
+                                + " enrolment",
+                        username,
+                        settings.getRequiredGroup());
+                return;
+            }
+
             User user = userService.findByUsernameIgnoreCase(username).orElse(null);
             if (user == null) {
                 return;
             }
-            if (certificateService.hasUserCertificate(user.getId())) {
+            // Re-enrol when missing, expired, or in the last third of validity. Login is the only
+            // moment the user's OIDC token is in context, so short-lived leaves must be refreshed
+            // here before they lapse — there is no re-mint at signing time.
+            if (!certificateService.needsEnrollment(user.getId())) {
                 return;
             }
             certificateService.enrollUserCertificate(user, idToken);
             log.info("Enrolled step-ca signing certificate for user {} at login", username);
         } catch (Exception e) {
-            // Never block login on enrolment failure; the certificate can be retried next login.
+            // Never block login on enrolment failure; the certificate is retried at the next login.
             log.warn(
                     "Failed to enrol step-ca signing certificate for user {} at login: {}",
                     username,
