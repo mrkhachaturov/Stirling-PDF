@@ -2,10 +2,12 @@ package stirling.software.proprietary.storage.model;
 
 import java.io.Serializable;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import lombok.Getter;
@@ -25,7 +27,10 @@ public class StoredFileBlob implements Serializable {
     @Column(name = "storage_key", nullable = false, length = 128)
     private String storageKey;
 
-    @Lob
+    // Bind as SQL VARBINARY so the byte[] is stored inline in the bytea column. @Lob would
+    // instead map byte[] to a PostgreSQL Large Object (an OID/bigint reference), which mismatches
+    // the bytea column. The bug is masked on H2 (the default DB) and only surfaces on PostgreSQL.
+    @JdbcTypeCode(SqlTypes.VARBINARY)
     @Column(name = "data", nullable = false, columnDefinition = "BYTEA")
     private byte[] data;
 }
