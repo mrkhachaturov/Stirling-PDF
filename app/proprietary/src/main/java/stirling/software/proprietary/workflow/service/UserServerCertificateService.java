@@ -1,28 +1,13 @@
 package stirling.software.proprietary.workflow.service;
 
 import java.io.*;
-import java.math.BigInteger;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Date;
 import java.util.Optional;
 
-import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.BasicConstraints;
-import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.KeyPurposeId;
-import org.bouncycastle.asn1.x509.KeyUsage;
-import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.ContentSigner;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +21,9 @@ import stirling.software.proprietary.security.model.User;
 import stirling.software.proprietary.workflow.model.CertificateType;
 import stirling.software.proprietary.workflow.model.UserServerCertificateEntity;
 import stirling.software.proprietary.workflow.repository.UserServerCertificateRepository;
+import stirling.software.proprietary.workflow.service.issuer.IssuedUserCertificate;
+import stirling.software.proprietary.workflow.service.issuer.UserCertificateIssuanceRequest;
+import stirling.software.proprietary.workflow.service.issuer.UserCertificateIssuerResolver;
 
 @Service
 @Slf4j
@@ -44,15 +32,11 @@ public class UserServerCertificateService {
 
     private static final String KEYSTORE_ALIAS = "stirling-pdf-user-cert";
     private static final String DEFAULT_PASSWORD_PREFIX = "stirling-user-cert-";
-    private static final int VALIDITY_DAYS = 365;
 
     private final UserServerCertificateRepository certificateRepository;
     private final UserRepository userRepository;
     private final MetadataEncryptionService metadataEncryptionService;
-
-    static {
-        Security.addProvider(new BouncyCastleProvider());
-    }
+    private final UserCertificateIssuerResolver issuerResolver;
 
     /** Get or create user certificate (auto-generate if not exists) */
     @Transactional
@@ -69,96 +53,57 @@ public class UserServerCertificateService {
         return generateUserCertificate(user);
     }
 
-    /** Generate new certificate for user */
+    /**
+     * Generate a new certificate for the user using the configured issuer (self-signed by default).
+     */
     @Transactional
     public UserServerCertificateEntity generateUserCertificate(User user) throws Exception {
-        log.info("Generating server certificate for user: {}", user.getUsername());
+        return issueAndStore(UserCertificateIssuanceRequest.forUser(user));
+    }
 
-        // Generate key pair
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", "BC");
-        keyPairGenerator.initialize(2048, new SecureRandom());
-        KeyPair keyPair = keyPairGenerator.generateKeyPair();
+    /**
+     * Enrol (or re-enrol) the user's signing certificate using an explicitly supplied OIDC id
+     * token. Used at login time so an OIDC-backed issuer receives a fresh token in the acting
+     * user's own context.
+     */
+    @Transactional
+    public UserServerCertificateEntity enrollUserCertificate(User user, String oidcIdToken)
+            throws Exception {
+        return issueAndStore(new UserCertificateIssuanceRequest(user, oidcIdToken));
+    }
 
-        // Certificate details with username
-        String username = user.getUsername();
-        X500Name subject = new X500Name("CN=" + username + ", O=Stirling-PDF User, C=US");
-        BigInteger serialNumber = BigInteger.valueOf(System.currentTimeMillis());
-        Date notBefore = new Date();
-        Date notAfter =
-                new Date(notBefore.getTime() + ((long) VALIDITY_DAYS * 24 * 60 * 60 * 1000));
+    private UserServerCertificateEntity issueAndStore(UserCertificateIssuanceRequest request)
+            throws Exception {
+        User user = request.user();
+        IssuedUserCertificate issued = issuerResolver.resolve().issue(request);
 
-        // Build certificate
-        JcaX509v3CertificateBuilder certBuilder =
-                new JcaX509v3CertificateBuilder(
-                        subject, serialNumber, notBefore, notAfter, subject, keyPair.getPublic());
+        X509Certificate leaf = issued.leaf();
+        Certificate[] chain = issued.chain();
 
-        // Add PDF-specific certificate extensions
-        JcaX509ExtensionUtils extUtils = new JcaX509ExtensionUtils();
-
-        // End-entity certificate, not a CA
-        certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
-
-        // Key usage for PDF digital signatures
-        certBuilder.addExtension(
-                Extension.keyUsage,
-                true,
-                new KeyUsage(KeyUsage.digitalSignature | KeyUsage.nonRepudiation));
-
-        // Extended key usage for document signing
-        certBuilder.addExtension(
-                Extension.extendedKeyUsage,
-                false,
-                new ExtendedKeyUsage(KeyPurposeId.id_kp_codeSigning));
-
-        // Subject Key Identifier
-        certBuilder.addExtension(
-                Extension.subjectKeyIdentifier,
-                false,
-                extUtils.createSubjectKeyIdentifier(keyPair.getPublic()));
-
-        // Authority Key Identifier for self-signed cert
-        certBuilder.addExtension(
-                Extension.authorityKeyIdentifier,
-                false,
-                extUtils.createAuthorityKeyIdentifier(keyPair.getPublic()));
-
-        // Sign certificate
-        ContentSigner signer =
-                new JcaContentSignerBuilder("SHA256WithRSA")
-                        .setProvider("BC")
-                        .build(keyPair.getPrivate());
-
-        X509CertificateHolder certHolder = certBuilder.build(signer);
-        X509Certificate cert =
-                new JcaX509CertificateConverter().setProvider("BC").getCertificate(certHolder);
-
-        // Create keystore
         KeyStore keyStore = KeyStore.getInstance("PKCS12");
         keyStore.load(null, null);
         String password = generateUserPassword(user.getId());
-        keyStore.setKeyEntry(
-                KEYSTORE_ALIAS,
-                keyPair.getPrivate(),
-                password.toCharArray(),
-                new Certificate[] {cert});
+        keyStore.setKeyEntry(KEYSTORE_ALIAS, issued.privateKey(), password.toCharArray(), chain);
 
-        // Store keystore bytes
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         keyStore.store(baos, password.toCharArray());
         byte[] keystoreBytes = baos.toByteArray();
 
-        // Create entity
-        UserServerCertificateEntity entity = new UserServerCertificateEntity();
+        UserServerCertificateEntity entity =
+                certificateRepository
+                        .findByUserId(user.getId())
+                        .orElseGet(UserServerCertificateEntity::new);
+
         entity.setUser(user);
         entity.setKeystoreData(keystoreBytes);
         entity.setKeystorePassword(metadataEncryptionService.encrypt(password));
         entity.setCertificateType(CertificateType.AUTO_GENERATED);
-        entity.setSubjectDn(cert.getSubjectX500Principal().getName());
-        entity.setIssuerDn(cert.getIssuerX500Principal().getName());
+        entity.setSubjectDn(leaf.getSubjectX500Principal().getName());
+        entity.setIssuerDn(leaf.getIssuerX500Principal().getName());
         entity.setValidFrom(
-                LocalDateTime.ofInstant(cert.getNotBefore().toInstant(), ZoneId.systemDefault()));
+                LocalDateTime.ofInstant(leaf.getNotBefore().toInstant(), ZoneId.systemDefault()));
         entity.setValidTo(
-                LocalDateTime.ofInstant(cert.getNotAfter().toInstant(), ZoneId.systemDefault()));
+                LocalDateTime.ofInstant(leaf.getNotAfter().toInstant(), ZoneId.systemDefault()));
 
         return certificateRepository.save(entity);
     }
