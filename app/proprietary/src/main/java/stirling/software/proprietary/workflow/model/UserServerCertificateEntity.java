@@ -4,7 +4,9 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -37,7 +39,11 @@ public class UserServerCertificateEntity implements Serializable {
     @JsonIgnore
     private User user;
 
-    @Lob
+    // Bind as SQL VARBINARY so the byte[] is stored inline in the bytea column. @Lob would
+    // instead map byte[] to a PostgreSQL Large Object (an OID/bigint reference), which mismatches
+    // the bytea column ("column ... is of type bytea but expression is of type bigint"). The bug is
+    // masked on H2 (the default DB) and only surfaces on PostgreSQL.
+    @JdbcTypeCode(SqlTypes.VARBINARY)
     @Basic(fetch = FetchType.EAGER)
     @Column(name = "keystore_data", nullable = false, columnDefinition = "bytea")
     @JsonIgnore
