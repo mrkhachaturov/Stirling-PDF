@@ -1,6 +1,7 @@
 package stirling.software.proprietary.workflow.service.issuer;
 
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.event.InteractiveAuthenticationSuccessEvent;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
@@ -92,6 +93,9 @@ public class UserCertificateOidcEnrollmentListener {
             }
             certificateService.enrollUserCertificate(user, idToken);
             log.info("Enrolled step-ca signing certificate for user {} at login", username);
+        } catch (DataIntegrityViolationException e) {
+            // A concurrent login already enrolled this user (user_id is unique) — benign, no dup.
+            log.debug("Concurrent enrolment for user {}; certificate already created", username);
         } catch (Exception e) {
             // Never block login on enrolment failure; the certificate is retried at the next login.
             log.warn(
