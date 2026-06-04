@@ -15,6 +15,7 @@ import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -35,6 +36,9 @@ import stirling.software.proprietary.security.database.repository.UserRepository
 import stirling.software.proprietary.security.model.User;
 import stirling.software.proprietary.workflow.model.UserServerCertificateEntity;
 import stirling.software.proprietary.workflow.repository.UserServerCertificateRepository;
+import stirling.software.proprietary.workflow.service.issuer.SelfSignedUserCertificateIssuer;
+import stirling.software.proprietary.workflow.service.issuer.UserCertificateIssuerResolver;
+import stirling.software.proprietary.workflow.service.issuer.UserCertificateSettings;
 
 @ExtendWith(MockitoExtension.class)
 class UserServerCertificateServiceTest {
@@ -53,9 +57,14 @@ class UserServerCertificateServiceTest {
         props.setAutomaticallyGenerated(generated);
 
         encryptionService = new MetadataEncryptionService(props);
+        // Default issuer: self-signed (no config injected -> normalizedIssuer() == "selfsigned").
+        UserCertificateIssuerResolver issuerResolver =
+                new UserCertificateIssuerResolver(
+                        List.of(new SelfSignedUserCertificateIssuer()),
+                        new UserCertificateSettings());
         service =
                 new UserServerCertificateService(
-                        certificateRepository, userRepository, encryptionService);
+                        certificateRepository, userRepository, encryptionService, issuerResolver);
     }
 
     private User user(long id) {
