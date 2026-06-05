@@ -4,6 +4,17 @@ import {
   BaseParametersHook,
 } from "@app/hooks/tools/shared/useBaseParameters";
 
+// Manual placement of the visible stamp, captured from the viewer overlay. Coordinates are
+// page fractions (0-1) with the origin at the top-left, matching what the overlay reports; the
+// backend converts them to PDF user space. When absent the stamp keeps its automatic placement.
+export interface CertSignStampPlacement {
+  page: number; // 0-indexed page the stamp was dropped on
+  x: number; // left edge, fraction of page width
+  y: number; // top edge, fraction of page height
+  width: number; // fraction of page width
+  height: number; // fraction of page height
+}
+
 export interface CertSignParameters extends BaseParameters {
   // Sign mode selection
   signMode: "MANUAL" | "AUTO";
@@ -23,6 +34,14 @@ export interface CertSignParameters extends BaseParameters {
   name: string;
   pageNumber: number;
   showLogo: boolean;
+
+  // Visible stamp styling (applied uniformly to the whole stamp)
+  fontSize: number; // base font size in points
+  textColor: string; // #RRGGBB applied to text and border
+  showBorder: boolean; // draw the stamp border
+
+  // Optional manual placement from the viewer; null = automatic bottom-right
+  stampPlacement: CertSignStampPlacement | null;
 }
 
 export const defaultParameters: CertSignParameters = {
@@ -35,6 +54,10 @@ export const defaultParameters: CertSignParameters = {
   name: "",
   pageNumber: 1,
   showLogo: true,
+  fontSize: 10,
+  textColor: "#0033CC",
+  showBorder: true,
+  stampPlacement: null,
 };
 
 export type CertSignParametersHook = BaseParametersHook<CertSignParameters>;
