@@ -172,6 +172,38 @@ public class CertSignController {
         return Locale.forLanguageTag(tag.replace('_', '-'));
     }
 
+    /**
+     * Optional appearance and placement settings for the visible signature stamp. All fields are
+     * nullable: when the rectangle is absent the stamp keeps its automatic bottom-right placement,
+     * and when colour/size are absent the locale default styling applies.
+     *
+     * <p>The rectangle is expressed in page fractions (0-1) with the origin at the top-left, which
+     * is what the frontend overlay reports; {@link CreateSignature#createVisibleSignature} converts
+     * it to PDF user-space (bottom-left origin) points.
+     */
+    public record VisibleSignatureSpec(
+            Float x,
+            Float y,
+            Float width,
+            Float height,
+            Integer fontSize,
+            String textColor,
+            boolean showBorder) {
+
+        public static final VisibleSignatureSpec DEFAULT =
+                new VisibleSignatureSpec(null, null, null, null, null, null, true);
+
+        /** True when a full, positive rectangle was supplied by the user. */
+        public boolean hasExplicitRect() {
+            return x != null
+                    && y != null
+                    && width != null
+                    && height != null
+                    && width > 0f
+                    && height > 0f;
+        }
+    }
+
     public static void sign(
             CustomPDFDocumentFactory pdfDocumentFactory,
             MultipartFile input,
@@ -183,7 +215,8 @@ public class CertSignController {
             String location,
             String reason,
             Boolean showLogo,
-            Locale locale) {
+            Locale locale,
+            VisibleSignatureSpec stampSpec) {
         try (PDDocument doc = pdfDocumentFactory.load(input)) {
             PDSignature signature = new PDSignature();
             signature.setFilter(PDSignature.FILTER_ADOBE_PPKLITE);
@@ -202,7 +235,7 @@ public class CertSignController {
                 if (Boolean.TRUE.equals(showSignature)) {
                     signatureOptions.setVisualSignature(
                             instance.createVisibleSignature(
-                                    doc, signature, pageNumber, showLogo, locale));
+                                    doc, signature, pageNumber, showLogo, locale, stampSpec));
                     signatureOptions.setPage(pageNumber);
                 }
                 doc.addSignature(signature, instance, signatureOptions);
@@ -242,6 +275,15 @@ public class CertSignController {
         // Convert 1-indexed page number (user input) to 0-indexed page number (API requirement)
         Integer pageNumber = request.getPageNumber() != null ? (request.getPageNumber() - 1) : null;
         Boolean showLogo = request.getShowLogo();
+        VisibleSignatureSpec stampSpec =
+                new VisibleSignatureSpec(
+                        request.getStampX(),
+                        request.getStampY(),
+                        request.getStampWidth(),
+                        request.getStampHeight(),
+                        request.getFontSize(),
+                        request.getTextColor(),
+                        !Boolean.FALSE.equals(request.getShowBorder()));
 
         if (StringUtils.isBlank(certType)) {
             throw ExceptionUtils.createIllegalArgumentException(
@@ -339,7 +381,8 @@ public class CertSignController {
                     location,
                     reason,
                     showLogo,
-                    resolveDefaultLocale(applicationProperties));
+                    resolveDefaultLocale(applicationProperties),
+                    stampSpec);
         } catch (IOException e) {
             signedOut.close();
             throw e;
@@ -414,10 +457,13 @@ public class CertSignController {
                 PDSignature signature,
                 Integer pageNumber,
                 Boolean showLogo,
-                Locale locale)
+                Locale locale,
+                VisibleSignatureSpec stampSpec)
                 throws IOException {
             // modified from org.apache.pdfbox.examples.signature.CreateVisibleSignature2
             boolean russian = locale != null && "ru".equals(locale.getLanguage());
+            VisibleSignatureSpec spec =
+                    stampSpec != null ? stampSpec : VisibleSignatureSpec.DEFAULT;
             try (PDDocument doc = new PDDocument()) {
                 PDRectangle media = srcDoc.getPage(pageNumber).getMediaBox();
                 PDPage page = new PDPage(media);
@@ -444,24 +490,23 @@ public class CertSignController {
 
                 // The Russian stamp carries a header plus certificate and signing details. Size the
                 // box to the widest line (no large empty right margin) and to however many detail
-                // lines are present.
+                // lines are present. This natural size is the appearance BBox; the on-page widget
+                // rectangle may differ, and viewers scale the appearance to fill it.
                 List<String> russianLines = russian ? buildRussianBodyLines(signature) : null;
                 float boxWidth = russian ? russianStampWidth(font, russianLines) : 200f;
                 float boxHeight = russian ? (50f + russianLines.size() * 14f) : 50f;
-                float margin = 18f;
-                float gap = 10f;
 
-                // Place the stamp at the bottom-right corner and stack repeated signatures
-                // upward, so a document signed more than once shows each stamp in its own spot
-                // instead of overlapping the previous one at a fixed position.
-                int existingSignatures = srcDoc.getSignatureDictionaries().size();
-                float x = media.getUpperRightX() - boxWidth - margin;
-                float y = media.getLowerLeftY() + margin + existingSignatures * (boxHeight + gap);
-                float maxY = media.getUpperRightY() - boxHeight - margin;
-                if (y > maxY) {
-                    y = maxY;
-                }
-                widget.setRectangle(new PDRectangle(x, y, boxWidth, boxHeight));
+                // The base font size is rendered at boxWidth/boxHeight; a larger fontSize simply
+                // scales the whole stamp up by enlarging the widget rectangle (the appearance is
+                // mapped onto it), so individual draw offsets stay fixed.
+                float fontScale =
+                        spec.fontSize() != null && spec.fontSize() > 0
+                                ? spec.fontSize() / RU_HEADER_SIZE
+                                : 1f;
+
+                PDRectangle widgetRect =
+                        computeWidgetRectangle(media, srcDoc, boxWidth, boxHeight, fontScale, spec);
+                widget.setRectangle(widgetRect);
 
                 // from PDVisualSigBuilder.createHolderForm()
                 PDStream stream = new PDStream(doc);
@@ -469,6 +514,8 @@ public class CertSignController {
                 PDResources res = new PDResources();
                 form.setResources(res);
                 form.setFormType(1);
+                // BBox stays the natural content size; the widget rectangle above drives the final
+                // on-page scale, so resizing the placement box stretches the whole stamp to fit.
                 PDRectangle bbox = new PDRectangle(boxWidth, boxHeight);
                 form.setBBox(bbox);
 
@@ -479,17 +526,91 @@ public class CertSignController {
                 appearance.setNormalAppearance(appearanceStream);
                 widget.setAppearance(appearance);
 
+                Color textColor =
+                        parseColor(spec.textColor(), russian ? RU_DEFAULT_COLOR : Color.black);
+
                 try (PDPageContentStream cs = new PDPageContentStream(doc, appearanceStream)) {
                     if (russian) {
-                        drawRussianStamp(cs, font, russianLines, boxWidth, boxHeight);
+                        drawRussianStamp(
+                                cs,
+                                font,
+                                russianLines,
+                                boxWidth,
+                                boxHeight,
+                                textColor,
+                                spec.showBorder());
                     } else {
-                        drawDefaultStamp(cs, font, signature, boxHeight, showLogo, doc);
+                        drawDefaultStamp(cs, font, signature, boxHeight, showLogo, doc, textColor);
                     }
                 }
 
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 doc.save(baos);
                 return new ByteArrayInputStream(baos.toByteArray());
+            }
+        }
+
+        /**
+         * Resolve the on-page rectangle for the stamp widget. When the request carries an explicit
+         * rectangle (page fractions, top-left origin) it is converted to PDF user space; otherwise
+         * the stamp keeps its automatic bottom-right placement, stacking repeated signatures upward
+         * so they do not overlap, scaled by the requested font size.
+         */
+        private PDRectangle computeWidgetRectangle(
+                PDRectangle media,
+                PDDocument srcDoc,
+                float boxWidth,
+                float boxHeight,
+                float fontScale,
+                VisibleSignatureSpec spec) {
+            float mediaW = media.getWidth();
+            float mediaH = media.getHeight();
+
+            if (spec.hasExplicitRect()) {
+                // Scale the stamp to the drawn box WIDTH and derive the height from the stamp's
+                // natural aspect ratio. Sizing both axes independently would stretch the text,
+                // because the appearance BBox is mapped onto the widget rectangle non-uniformly.
+                float rectW = spec.width() * mediaW;
+                float rectH = rectW * (boxHeight / boxWidth);
+                float rectX = media.getLowerLeftX() + spec.x() * mediaW;
+                // The frontend reports y from the top; PDF user space measures from the bottom.
+                // Anchor the stamp's top edge at the top of the drawn box.
+                float rectY = media.getLowerLeftY() + (1f - spec.y()) * mediaH - rectH;
+                // Keep the box on the page even if the client sends a slightly out-of-bounds value.
+                rectX =
+                        Math.max(
+                                media.getLowerLeftX(),
+                                Math.min(rectX, media.getUpperRightX() - rectW));
+                rectY =
+                        Math.max(
+                                media.getLowerLeftY(),
+                                Math.min(rectY, media.getUpperRightY() - rectH));
+                return new PDRectangle(rectX, rectY, rectW, rectH);
+            }
+
+            float w = boxWidth * fontScale;
+            float h = boxHeight * fontScale;
+            float margin = 18f;
+            float gap = 10f;
+            int existingSignatures = srcDoc.getSignatureDictionaries().size();
+            float x = media.getUpperRightX() - w - margin;
+            float y = media.getLowerLeftY() + margin + existingSignatures * (h + gap);
+            float maxY = media.getUpperRightY() - h - margin;
+            if (y > maxY) {
+                y = maxY;
+            }
+            return new PDRectangle(x, y, w, h);
+        }
+
+        /** Parse a {@code #RRGGBB} colour, falling back to {@code fallback} when absent/invalid. */
+        private static Color parseColor(String hex, Color fallback) {
+            if (hex == null || hex.isBlank()) {
+                return fallback;
+            }
+            try {
+                return Color.decode(hex.trim());
+            } catch (NumberFormatException e) {
+                return fallback;
             }
         }
 
@@ -500,7 +621,8 @@ public class CertSignController {
                 PDSignature signature,
                 float height,
                 Boolean showLogo,
-                PDDocument doc)
+                PDDocument doc,
+                Color textColor)
                 throws IOException {
             if (Boolean.TRUE.equals(showLogo)) {
                 cs.saveGraphicsState();
@@ -518,7 +640,7 @@ public class CertSignController {
             float leading = fontSize * 1.5f;
             cs.beginText();
             cs.setFont(font, fontSize);
-            cs.setNonStrokingColor(Color.black);
+            cs.setNonStrokingColor(textColor);
             cs.newLineAtOffset(fontSize, height - leading);
             cs.setLeading(leading);
 
@@ -590,6 +712,7 @@ public class CertSignController {
         private static final float RU_HEADER_SIZE = 10f;
         private static final float RU_BODY_SIZE = 8f;
         private static final float RU_PAD = 10f;
+        private static final Color RU_DEFAULT_COLOR = new Color(0, 51, 204);
 
         /**
          * Width of the Russian stamp box, fitted to its widest line so there is no empty margin.
@@ -612,17 +735,21 @@ public class CertSignController {
                 PDFont font,
                 List<String> bodyLines,
                 float boxWidth,
-                float boxHeight)
+                float boxHeight,
+                Color color,
+                boolean showBorder)
                 throws IOException {
-            Color blue = new Color(0, 51, 204);
+            // The background is left untouched (no fill) so the document shows through the stamp.
 
-            // Blue border, like the conventional Russian e-signature stamp.
-            cs.setStrokingColor(blue);
-            cs.setLineWidth(1f);
-            cs.addRect(1.5f, 1.5f, boxWidth - 3f, boxHeight - 3f);
-            cs.stroke();
+            if (showBorder) {
+                // Border, like the conventional Russian e-signature stamp.
+                cs.setStrokingColor(color);
+                cs.setLineWidth(1f);
+                cs.addRect(1.5f, 1.5f, boxWidth - 3f, boxHeight - 3f);
+                cs.stroke();
+            }
 
-            cs.setNonStrokingColor(blue);
+            cs.setNonStrokingColor(color);
             drawCentered(cs, font, RU_HEADER_SIZE, RU_HEADER_1, boxWidth, boxHeight - 16f);
             drawCentered(cs, font, RU_HEADER_SIZE, RU_HEADER_2, boxWidth, boxHeight - 28f);
 
