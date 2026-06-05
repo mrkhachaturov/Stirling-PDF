@@ -56,7 +56,8 @@ public class PdfSigningServiceImpl implements PdfSigningService {
                 name,
                 location,
                 reason,
-                showLogo);
+                showLogo,
+                CertSignController.resolveDefaultLocale(applicationProperties));
 
         return outputStream.toByteArray();
     }
