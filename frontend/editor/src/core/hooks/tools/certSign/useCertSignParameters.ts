@@ -7,8 +7,9 @@ import {
 export interface CertSignParameters extends BaseParameters {
   // Sign mode selection
   signMode: "MANUAL" | "AUTO";
-  // Certificate signing options (only for manual mode)
-  certType: "" | "PEM" | "PKCS12" | "PFX" | "JKS";
+  // Certificate type. In MANUAL mode one of the upload formats; in AUTO mode the managed
+  // identity ("SERVER" shared cert or "USER_CERT" personal cert) selected by the UI.
+  certType: "" | "PEM" | "PKCS12" | "PFX" | "JKS" | "SERVER" | "USER_CERT";
   privateKeyFile?: File;
   certFile?: File;
   p12File?: File;

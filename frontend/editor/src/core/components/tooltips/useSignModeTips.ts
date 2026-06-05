@@ -1,8 +1,47 @@
 import { useTranslation } from "react-i18next";
 import { TooltipContent } from "@app/types/tips";
+import { useAppConfig } from "@app/contexts/AppConfigContext";
 
 export const useSignModeTips = (): TooltipContent => {
   const { t } = useTranslation();
+  const { config } = useAppConfig();
+  // When the managed "Auto" identity is the per-user personal cert (issued by an external CA),
+  // describe it accurately (trusted, per-person) instead of the server self-signed copy.
+  const isUserCertificateEnabled = config?.userCertificateEnabled ?? false;
+
+  const autoTip = isUserCertificateEnabled
+    ? {
+        title: t(
+          "certSign.signMode.tooltip.autoPersonal.title",
+          "Auto - Personal certificate",
+        ),
+        description: t(
+          "certSign.signMode.tooltip.autoPersonal.text",
+          "Signs with your <b>personal certificate</b> issued by the organisation CA. Per-person identity; displays as <b>Trusted</b> in viewers when the CA chain is recognised.",
+        ),
+        bullets: [
+          t(
+            "certSign.signMode.tooltip.autoPersonal.use",
+            "Use when: each signer needs their own verifiable identity, no setup.",
+          ),
+        ],
+      }
+    : {
+        title: t(
+          "certSign.signMode.tooltip.auto.title",
+          "Auto - Zero-setup, instant system seal",
+        ),
+        description: t(
+          "certSign.signMode.tooltip.auto.text",
+          "Signs with a server <b>self-signed</b> certificate. Same <b>tamper-evident seal</b> and <b>audit trail</b>; typically shows <b>Unverified</b> in viewers.",
+        ),
+        bullets: [
+          t(
+            "certSign.signMode.tooltip.auto.use",
+            "Use when: you need speed and consistent internal identity across reviews and records.",
+          ),
+        ],
+      };
 
   return {
     header: {
@@ -38,22 +77,7 @@ export const useSignModeTips = (): TooltipContent => {
           ),
         ],
       },
-      {
-        title: t(
-          "certSign.signMode.tooltip.auto.title",
-          "Auto - Zero-setup, instant system seal",
-        ),
-        description: t(
-          "certSign.signMode.tooltip.auto.text",
-          "Signs with a server <b>self-signed</b> certificate. Same <b>tamper-evident seal</b> and <b>audit trail</b>; typically shows <b>Unverified</b> in viewers.",
-        ),
-        bullets: [
-          t(
-            "certSign.signMode.tooltip.auto.use",
-            "Use when: you need speed and consistent internal identity across reviews and records.",
-          ),
-        ],
-      },
+      autoTip,
       {
         title: t("certSign.signMode.tooltip.rule.title", "Rule of thumb"),
         description: t(

@@ -65,7 +65,11 @@ class UserServerCertificateServiceTest {
                         new UserCertificateSettings());
         service =
                 new UserServerCertificateService(
-                        certificateRepository, userRepository, encryptionService, issuerResolver);
+                        certificateRepository,
+                        userRepository,
+                        encryptionService,
+                        issuerResolver,
+                        new UserCertificateSettings());
     }
 
     private User user(long id) {

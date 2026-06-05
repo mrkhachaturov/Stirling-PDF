@@ -722,6 +722,13 @@ public class ApplicationProperties {
 
         @Data
         public static class Timestamp {
+            /**
+             * When true, signing embeds an RFC 3161 signature timestamp (PAdES B-T) from {@link
+             * #defaultTsaUrl}, so signatures stay valid after the (often short-lived) signing
+             * certificate expires. Default false preserves the prior no-timestamp behaviour.
+             */
+            private boolean signingEnabled = false;
+
             private String defaultTsaUrl = "http://timestamp.digicert.com";
             private List<String> customTsaUrls = new ArrayList<>();
         }
