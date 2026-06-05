@@ -1,5 +1,6 @@
 import {
   PdfiumDocument,
+  PdfiumFont,
   PdfiumPage,
   StandardFonts,
 } from "@app/services/pdfiumDocBuilder";
@@ -42,8 +43,31 @@ export const createReportPdf = async (
   t: TFunction<"translation">,
 ): Promise<File> => {
   const doc = await PdfiumDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  // Embed a Unicode font so non-Latin report text (e.g. Cyrillic signer names and labels) renders;
+  // the standard PDF fonts are WinAnsi-only. Fall back to Helvetica if the font asset can't load so
+  // the report still generates (Latin-only) rather than failing outright.
+  const embedReportFont = async (
+    file: string,
+    fallback: string,
+  ): Promise<PdfiumFont> => {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}fonts/${file}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await doc.embedTrueTypeFont(new Uint8Array(await res.arrayBuffer()));
+    } catch (e) {
+      console.warn(
+        `Signature report: could not embed ${file}, falling back to ${fallback}`,
+        e,
+      );
+      return doc.embedFont(fallback);
+    }
+  };
+  const font = await embedReportFont("NotoSans-Regular.ttf", StandardFonts.Helvetica);
+  const fontBold = await embedReportFont(
+    "NotoSans-Bold.ttf",
+    StandardFonts.HelveticaBold,
+  );
   const loadThumbnail = createThumbnailLoader(doc);
 
   for (const entry of entries) {
