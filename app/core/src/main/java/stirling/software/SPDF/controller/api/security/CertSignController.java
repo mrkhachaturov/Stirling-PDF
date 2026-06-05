@@ -493,10 +493,21 @@ public class CertSignController {
                 acroForm.getCOSObject().setDirect(true);
                 acroFormFields.add(signatureField);
 
-                // The Russian stamp carries a header plus certificate and signing details, so it
-                // needs a wider box sized to however many detail lines are present.
+                // Embed a Unicode TrueType font (subset) so non-Latin signer names and reasons
+                // (e.g. Cyrillic) render in the visible signature. The standard Times-Bold uses
+                // WinAnsiEncoding and throws on any character outside Latin-1. Loaded up front so
+                // the Russian stamp can be sized to the actual rendered text width.
+                PDFont font;
+                try (InputStream fontStream =
+                        new ClassPathResource("static/fonts/NotoSans-Bold.ttf").getInputStream()) {
+                    font = PDType0Font.load(doc, fontStream);
+                }
+
+                // The Russian stamp carries a header plus certificate and signing details. Size the
+                // box to the widest line (no large empty right margin) and to however many detail
+                // lines are present.
                 List<String> russianLines = russian ? buildRussianBodyLines(signature) : null;
-                float boxWidth = russian ? 320f : 200f;
+                float boxWidth = russian ? russianStampWidth(font, russianLines) : 200f;
                 float boxHeight = russian ? (50f + russianLines.size() * 14f) : 50f;
                 float margin = 18f;
                 float gap = 10f;
@@ -521,14 +532,6 @@ public class CertSignController {
                 form.setFormType(1);
                 PDRectangle bbox = new PDRectangle(boxWidth, boxHeight);
                 form.setBBox(bbox);
-                // Embed a Unicode TrueType font (subset) so non-Latin signer names and reasons
-                // (e.g. Cyrillic) render in the visible signature. The standard Times-Bold uses
-                // WinAnsiEncoding and throws on any character outside Latin-1.
-                PDFont font;
-                try (InputStream fontStream =
-                        new ClassPathResource("static/fonts/NotoSans-Bold.ttf").getInputStream()) {
-                    font = PDType0Font.load(doc, fontStream);
-                }
 
                 // from PDVisualSigBuilder.createAppearanceDictionary()
                 PDAppearanceDictionary appearance = new PDAppearanceDictionary();
@@ -643,6 +646,28 @@ public class CertSignController {
             return lines;
         }
 
+        private static final String RU_HEADER_1 = "ДОКУМЕНТ ПОДПИСАН";
+        private static final String RU_HEADER_2 = "ЦИФРОВОЙ ПОДПИСЬЮ";
+        private static final float RU_HEADER_SIZE = 10f;
+        private static final float RU_BODY_SIZE = 8f;
+        private static final float RU_PAD = 10f;
+
+        /**
+         * Width of the Russian stamp box, fitted to its widest line so there is no empty margin.
+         */
+        private float russianStampWidth(PDFont font, List<String> bodyLines) throws IOException {
+            float headerMax =
+                    Math.max(
+                            textWidth(font, RU_HEADER_1, RU_HEADER_SIZE),
+                            textWidth(font, RU_HEADER_2, RU_HEADER_SIZE));
+            float bodyMax = 0f;
+            for (String line : bodyLines) {
+                bodyMax = Math.max(bodyMax, textWidth(font, line, RU_BODY_SIZE));
+            }
+            // Headers are centred (pad both sides); body lines are left-aligned at RU_PAD.
+            return Math.max(headerMax + 2f * RU_PAD, RU_PAD + bodyMax + RU_PAD);
+        }
+
         private void drawRussianStamp(
                 PDPageContentStream cs,
                 PDFont font,
@@ -659,15 +684,12 @@ public class CertSignController {
             cs.stroke();
 
             cs.setNonStrokingColor(blue);
-            float headerSize = 10f;
-            float bodySize = 8f;
-            drawCentered(cs, font, headerSize, "ДОКУМЕНТ ПОДПИСАН", boxWidth, boxHeight - 16f);
-            drawCentered(cs, font, headerSize, "ЦИФРОВОЙ ПОДПИСЬЮ", boxWidth, boxHeight - 28f);
+            drawCentered(cs, font, RU_HEADER_SIZE, RU_HEADER_1, boxWidth, boxHeight - 16f);
+            drawCentered(cs, font, RU_HEADER_SIZE, RU_HEADER_2, boxWidth, boxHeight - 28f);
 
-            float leftX = 10f;
             float y = boxHeight - 46f;
             for (String line : bodyLines) {
-                drawLine(cs, font, bodySize, line, leftX, y);
+                drawLine(cs, font, RU_BODY_SIZE, line, RU_PAD, y);
                 y -= 14f;
             }
         }
@@ -690,8 +712,11 @@ public class CertSignController {
                 float boxWidth,
                 float y)
                 throws IOException {
-            float textWidth = font.getStringWidth(text) / 1000f * size;
-            drawLine(cs, font, size, text, (boxWidth - textWidth) / 2f, y);
+            drawLine(cs, font, size, text, (boxWidth - textWidth(font, text, size)) / 2f, y);
+        }
+
+        private static float textWidth(PDFont font, String text, float size) throws IOException {
+            return font.getStringWidth(text) / 1000f * size;
         }
     }
 }
