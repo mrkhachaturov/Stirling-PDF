@@ -22,6 +22,7 @@ import stirling.software.common.annotations.api.ConfigApi;
 import stirling.software.common.configuration.AppConfig;
 import stirling.software.common.model.ApplicationProperties;
 import stirling.software.common.service.ServerCertificateServiceInterface;
+import stirling.software.common.service.UserCertificateServiceInterface;
 import stirling.software.common.service.UserServiceInterface;
 import stirling.software.common.util.GeneralUtils;
 
@@ -34,6 +35,7 @@ public class ConfigController {
     private final ApplicationContext applicationContext;
     private final EndpointConfiguration endpointConfiguration;
     private final ServerCertificateServiceInterface serverCertificateService;
+    private final UserCertificateServiceInterface userCertificateService;
     private final UserServiceInterface userService;
     private final stirling.software.common.service.LicenseServiceInterface licenseService;
     private final stirling.software.SPDF.config.ExternalAppDepConfig externalAppDepConfig;
@@ -45,6 +47,8 @@ public class ConfigController {
             @org.springframework.beans.factory.annotation.Autowired(required = false)
                     ServerCertificateServiceInterface serverCertificateService,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
+                    UserCertificateServiceInterface userCertificateService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
                     UserServiceInterface userService,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
                     stirling.software.common.service.LicenseServiceInterface licenseService,
@@ -53,6 +57,7 @@ public class ConfigController {
         this.applicationContext = applicationContext;
         this.endpointConfiguration = endpointConfiguration;
         this.serverCertificateService = serverCertificateService;
+        this.userCertificateService = userCertificateService;
         this.userService = userService;
         this.licenseService = licenseService;
         this.externalAppDepConfig = externalAppDepConfig;
@@ -288,6 +293,11 @@ public class ConfigController {
             configData.put(
                     "serverCertificateEnabled",
                     serverCertificateService != null && serverCertificateService.isEnabled());
+
+            // Per-user (personal) certificate settings — drives the managed "Auto" personal option
+            configData.put(
+                    "userCertificateEnabled",
+                    userCertificateService != null && userCertificateService.isEnabled());
 
             // Legal settings
             configData.put(

@@ -30,6 +30,7 @@ export interface AppConfig {
   license?: string;
   SSOAutoLogin?: boolean;
   serverCertificateEnabled?: boolean;
+  userCertificateEnabled?: boolean;
   enableMobileScanner?: boolean;
   mobileScannerConvertToPdf?: boolean;
   mobileScannerImageResolution?: string;

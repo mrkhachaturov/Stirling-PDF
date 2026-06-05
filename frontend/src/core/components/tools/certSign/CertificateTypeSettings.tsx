@@ -1,4 +1,5 @@
 import { Stack, Button } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 import { CertSignParameters } from "@app/hooks/tools/certSign/useCertSignParameters";
 import { useAppConfig } from "@app/contexts/AppConfigContext";
 
@@ -13,11 +14,15 @@ const CertificateTypeSettings = ({
   onParameterChange,
   disabled = false,
 }: CertificateTypeSettingsProps) => {
+  const { t } = useTranslation();
   const { config } = useAppConfig();
   const isServerCertificateEnabled = config?.serverCertificateEnabled ?? false;
+  const isUserCertificateEnabled = config?.userCertificateEnabled ?? false;
+  // Per-user personal cert takes priority as the managed "Auto" identity when enabled.
+  const isAutoEnabled = isServerCertificateEnabled || isUserCertificateEnabled;
 
-  // Reset to MANUAL if AUTO is selected but feature is disabled
-  if (parameters.signMode === "AUTO" && !isServerCertificateEnabled) {
+  // Reset to MANUAL if AUTO is selected but no managed certificate is available
+  if (parameters.signMode === "AUTO" && !isAutoEnabled) {
     onParameterChange("signMode", "MANUAL");
   }
 
@@ -50,7 +55,7 @@ const CertificateTypeSettings = ({
             Manual
           </div>
         </Button>
-        {isServerCertificateEnabled && (
+        {isAutoEnabled && (
           <Button
             variant={parameters.signMode === "AUTO" ? "filled" : "outline"}
             color={
@@ -58,8 +63,11 @@ const CertificateTypeSettings = ({
             }
             onClick={() => {
               onParameterChange("signMode", "AUTO");
-              // Clear cert type and files when switching to auto
-              onParameterChange("certType", "");
+              // Select the managed identity: personal cert if enabled, else shared server cert
+              onParameterChange(
+                "certType",
+                isUserCertificateEnabled ? "USER_CERT" : "SERVER",
+              );
             }}
             disabled={disabled}
             style={{
@@ -76,7 +84,9 @@ const CertificateTypeSettings = ({
                 fontSize: "11px",
               }}
             >
-              Auto (server)
+              {isUserCertificateEnabled
+                ? t("certSign.signMode.autoPersonal", "Auto (personal)")
+                : t("certSign.signMode.auto", "Auto (server)")}
             </div>
           </Button>
         )}

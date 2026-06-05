@@ -17,9 +17,13 @@ export const buildCertSignFormData = (
   const formData = new FormData();
   formData.append("fileInput", file);
 
-  // Handle sign mode
+  // Handle sign mode. In AUTO mode the UI has set certType to the managed identity
+  // ("USER_CERT" personal cert or "SERVER" shared cert); default to SERVER for safety.
   if (parameters.signMode === "AUTO") {
-    formData.append("certType", "SERVER");
+    formData.append(
+      "certType",
+      parameters.certType === "USER_CERT" ? "USER_CERT" : "SERVER",
+    );
   } else {
     formData.append("certType", parameters.certType);
     formData.append("password", parameters.password);
