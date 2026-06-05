@@ -15,6 +15,8 @@ import java.nio.file.Files;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
 import org.junit.jupiter.api.BeforeEach;
@@ -191,6 +193,60 @@ class RemoveCertSignControllerTest {
 
             ResponseEntity<Resource> response = removeCertSignController.removeCertSignPDF(request);
             assertNotNull(response.getBody());
+        }
+
+        @Test
+        @DisplayName("Should remove the visible signature widget from the page, not flatten it")
+        void testRemoveCertSign_RemovesVisibleWidget() throws Exception {
+            // Build a PDF whose signature field has a visible widget annotation on the page,
+            // mirroring the stamp a real signing produces.
+            byte[] pdfWithVisibleSig;
+            try (PDDocument doc = new PDDocument()) {
+                PDPage page = new PDPage();
+                doc.addPage(page);
+                PDAcroForm acroForm = new PDAcroForm(doc);
+                doc.getDocumentCatalog().setAcroForm(acroForm);
+                PDSignatureField sigField = new PDSignatureField(acroForm);
+                PDAnnotationWidget widget = sigField.getWidgets().get(0);
+                widget.setRectangle(new PDRectangle(50, 50, 200, 50));
+                widget.setPage(page);
+                page.getAnnotations().add(widget);
+                acroForm.getFields().add(sigField);
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                doc.save(baos);
+                pdfWithVisibleSig = baos.toByteArray();
+            }
+
+            // Sanity check: the widget really is present before removal.
+            try (PDDocument before = Loader.loadPDF(pdfWithVisibleSig)) {
+                assertFalse(before.getPage(0).getAnnotations().isEmpty());
+            }
+
+            MockMultipartFile pdfFile =
+                    new MockMultipartFile(
+                            "fileInput",
+                            "signed.pdf",
+                            MediaType.APPLICATION_PDF_VALUE,
+                            pdfWithVisibleSig);
+            PDFFile request = new PDFFile();
+            request.setFileInput(pdfFile);
+            when(pdfDocumentFactory.load(any(MultipartFile.class)))
+                    .thenAnswer(inv -> Loader.loadPDF(pdfWithVisibleSig));
+
+            ResponseEntity<Resource> response = removeCertSignController.removeCertSignPDF(request);
+
+            try (PDDocument after = Loader.loadPDF(drainBody(response))) {
+                assertTrue(
+                        after.getPage(0).getAnnotations().isEmpty(),
+                        "Visible signature widget should be gone from the page");
+                PDAcroForm form = after.getDocumentCatalog().getAcroForm();
+                boolean hasSignatureField =
+                        form != null
+                                && form.getFields().stream()
+                                        .anyMatch(f -> f instanceof PDSignatureField);
+                assertFalse(
+                        hasSignatureField, "Signature field should be removed from the AcroForm");
+            }
         }
 
         @Test

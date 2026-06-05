@@ -1,9 +1,16 @@
 package stirling.software.SPDF.controller.api.security;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
@@ -53,14 +60,36 @@ public class RemoveCertSignController {
             // Get the AcroForm
             PDAcroForm acroForm = catalog.getAcroForm();
             if (acroForm != null) {
-                // Remove signature fields safely
                 List<PDField> fieldsToRemove =
                         acroForm.getFields().stream()
                                 .filter(field -> field instanceof PDSignatureField)
                                 .toList();
 
                 if (!fieldsToRemove.isEmpty()) {
-                    acroForm.flatten(fieldsToRemove, false);
+                    // Delete the signature fields together with their widget annotations rather
+                    // than flattening them. flatten() bakes each field's visible appearance into
+                    // the page content before dropping the field, which leaves the signature
+                    // stamp visibly on the document even though the signature itself is gone.
+                    Set<COSDictionary> widgetCosObjects = new HashSet<>();
+                    for (PDField field : fieldsToRemove) {
+                        for (PDAnnotationWidget widget : field.getWidgets()) {
+                            widgetCosObjects.add(widget.getCOSObject());
+                        }
+                    }
+                    for (PDPage page : document.getPages()) {
+                        // Rebuild the annotation list and replace it wholesale: removing via the
+                        // list returned by getAnnotations() does not reliably propagate to the
+                        // underlying COS /Annots array, leaving the stamp in the saved PDF.
+                        List<PDAnnotation> kept = new ArrayList<>();
+                        for (PDAnnotation annotation : page.getAnnotations()) {
+                            if (!widgetCosObjects.contains(annotation.getCOSObject())) {
+                                kept.add(annotation);
+                            }
+                        }
+                        page.setAnnotations(kept);
+                    }
+                    acroForm.getFields().removeAll(fieldsToRemove);
+                    acroForm.setSignaturesExist(false);
                 }
             }
             // Return the modified PDF as a response
