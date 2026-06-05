@@ -9,8 +9,12 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Locale;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.pdfbox.examples.signature.CreateSignatureBase;
@@ -153,6 +157,22 @@ public class CertSignController {
         return (url == null || url.isBlank()) ? null : url;
     }
 
+    /**
+     * Resolve the locale that drives the visible signature layout from {@code SYSTEM_DEFAULTLOCALE}
+     * (the same setting the UI uses), so the stamp matches the configured instance language. Falls
+     * back to {@link Locale#UK} (the upstream English stamp) when unset.
+     */
+    public static Locale resolveDefaultLocale(ApplicationProperties applicationProperties) {
+        if (applicationProperties == null || applicationProperties.getSystem() == null) {
+            return Locale.UK;
+        }
+        String tag = applicationProperties.getSystem().getDefaultLocale();
+        if (tag == null || tag.isBlank()) {
+            return Locale.UK;
+        }
+        return Locale.forLanguageTag(tag.replace('_', '-'));
+    }
+
     public static void sign(
             CustomPDFDocumentFactory pdfDocumentFactory,
             MultipartFile input,
@@ -163,7 +183,8 @@ public class CertSignController {
             String name,
             String location,
             String reason,
-            Boolean showLogo) {
+            Boolean showLogo,
+            Locale locale) {
         try (PDDocument doc = pdfDocumentFactory.load(input)) {
             PDSignature signature = new PDSignature();
             signature.setFilter(PDSignature.FILTER_ADOBE_PPKLITE);
@@ -181,7 +202,8 @@ public class CertSignController {
                 signatureOptions.setPreferredSignatureSize(PREFERRED_SIGNATURE_SIZE);
                 if (Boolean.TRUE.equals(showSignature)) {
                     signatureOptions.setVisualSignature(
-                            instance.createVisibleSignature(doc, signature, pageNumber, showLogo));
+                            instance.createVisibleSignature(
+                                    doc, signature, pageNumber, showLogo, locale));
                     signatureOptions.setPage(pageNumber);
                 }
                 doc.addSignature(signature, instance, signatureOptions);
@@ -318,7 +340,8 @@ public class CertSignController {
                     name,
                     location,
                     reason,
-                    showLogo);
+                    showLogo,
+                    resolveDefaultLocale(applicationProperties));
         } catch (IOException e) {
             signedOut.close();
             throw e;
@@ -389,11 +412,17 @@ public class CertSignController {
         }
 
         public InputStream createVisibleSignature(
-                PDDocument srcDoc, PDSignature signature, Integer pageNumber, Boolean showLogo)
+                PDDocument srcDoc,
+                PDSignature signature,
+                Integer pageNumber,
+                Boolean showLogo,
+                Locale locale)
                 throws IOException {
             // modified from org.apache.pdfbox.examples.signature.CreateVisibleSignature2
+            boolean russian = locale != null && "ru".equals(locale.getLanguage());
             try (PDDocument doc = new PDDocument()) {
-                PDPage page = new PDPage(srcDoc.getPage(pageNumber).getMediaBox());
+                PDRectangle media = srcDoc.getPage(pageNumber).getMediaBox();
+                PDPage page = new PDPage(media);
                 doc.addPage(page);
                 PDAcroForm acroForm = new PDAcroForm(doc);
                 doc.getDocumentCatalog().setAcroForm(acroForm);
@@ -405,9 +434,25 @@ public class CertSignController {
                 acroForm.getCOSObject().setDirect(true);
                 acroFormFields.add(signatureField);
 
-                PDRectangle rect = new PDRectangle(0, 0, 200, 50);
+                // The Russian stamp carries a header plus certificate and signing details, so it
+                // needs a wider box sized to however many detail lines are present.
+                List<String> russianLines = russian ? buildRussianBodyLines(signature) : null;
+                float boxWidth = russian ? 320f : 200f;
+                float boxHeight = russian ? (50f + russianLines.size() * 14f) : 50f;
+                float margin = 18f;
+                float gap = 10f;
 
-                widget.setRectangle(rect);
+                // Place the stamp at the bottom-right corner and stack repeated signatures
+                // upward, so a document signed more than once shows each stamp in its own spot
+                // instead of overlapping the previous one at a fixed position.
+                int existingSignatures = srcDoc.getSignatureDictionaries().size();
+                float x = media.getUpperRightX() - boxWidth - margin;
+                float y = media.getLowerLeftY() + margin + existingSignatures * (boxHeight + gap);
+                float maxY = media.getUpperRightY() - boxHeight - margin;
+                if (y > maxY) {
+                    y = maxY;
+                }
+                widget.setRectangle(new PDRectangle(x, y, boxWidth, boxHeight));
 
                 // from PDVisualSigBuilder.createHolderForm()
                 PDStream stream = new PDStream(doc);
@@ -415,8 +460,7 @@ public class CertSignController {
                 PDResources res = new PDResources();
                 form.setResources(res);
                 form.setFormType(1);
-                PDRectangle bbox = new PDRectangle(rect.getWidth(), rect.getHeight());
-                float height = bbox.getHeight();
+                PDRectangle bbox = new PDRectangle(boxWidth, boxHeight);
                 form.setBBox(bbox);
                 // Embed a Unicode TrueType font (subset) so non-Latin signer names and reasons
                 // (e.g. Cyrillic) render in the visible signature. The standard Times-Bold uses
@@ -435,51 +479,160 @@ public class CertSignController {
                 widget.setAppearance(appearance);
 
                 try (PDPageContentStream cs = new PDPageContentStream(doc, appearanceStream)) {
-                    if (Boolean.TRUE.equals(showLogo)) {
-                        cs.saveGraphicsState();
-                        PDExtendedGraphicsState extState = new PDExtendedGraphicsState();
-                        extState.setBlendMode(BlendMode.MULTIPLY);
-                        extState.setNonStrokingAlphaConstant(0.5f);
-                        cs.setGraphicsStateParameters(extState);
-                        cs.transform(Matrix.getScaleInstance(0.08f, 0.08f));
-                        PDImageXObject img =
-                                PDImageXObject.createFromFileByExtension(logoFile, doc);
-                        cs.drawImage(img, 100, 0);
-                        cs.restoreGraphicsState();
+                    if (russian) {
+                        drawRussianStamp(cs, font, russianLines, boxWidth, boxHeight);
+                    } else {
+                        drawDefaultStamp(cs, font, signature, boxHeight, showLogo, doc);
                     }
-
-                    // show text
-                    float fontSize = 10;
-                    float leading = fontSize * 1.5f;
-                    cs.beginText();
-                    cs.setFont(font, fontSize);
-                    cs.setNonStrokingColor(Color.black);
-                    cs.newLineAtOffset(fontSize, height - leading);
-                    cs.setLeading(leading);
-
-                    X509Certificate cert = (X509Certificate) getCertificateChain()[0];
-
-                    // https://stackoverflow.com/questions/2914521/
-                    X500Name x500Name = new X500Name(cert.getSubjectX500Principal().getName());
-                    RDN cn = x500Name.getRDNs(BCStyle.CN)[0];
-                    String name = IETFUtils.valueToString(cn.getFirst().getValue());
-
-                    String date = signature.getSignDate().getTime().toString();
-                    String reason = signature.getReason();
-
-                    cs.showText("Signed by " + name);
-                    cs.newLine();
-                    cs.showText(date);
-                    cs.newLine();
-                    cs.showText(reason);
-
-                    cs.endText();
                 }
 
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 doc.save(baos);
                 return new ByteArrayInputStream(baos.toByteArray());
             }
+        }
+
+        /** Upstream three-line stamp: "Signed by &lt;name&gt;", sign date and reason. */
+        private void drawDefaultStamp(
+                PDPageContentStream cs,
+                PDFont font,
+                PDSignature signature,
+                float height,
+                Boolean showLogo,
+                PDDocument doc)
+                throws IOException {
+            if (Boolean.TRUE.equals(showLogo)) {
+                cs.saveGraphicsState();
+                PDExtendedGraphicsState extState = new PDExtendedGraphicsState();
+                extState.setBlendMode(BlendMode.MULTIPLY);
+                extState.setNonStrokingAlphaConstant(0.5f);
+                cs.setGraphicsStateParameters(extState);
+                cs.transform(Matrix.getScaleInstance(0.08f, 0.08f));
+                PDImageXObject img = PDImageXObject.createFromFileByExtension(logoFile, doc);
+                cs.drawImage(img, 100, 0);
+                cs.restoreGraphicsState();
+            }
+
+            float fontSize = 10;
+            float leading = fontSize * 1.5f;
+            cs.beginText();
+            cs.setFont(font, fontSize);
+            cs.setNonStrokingColor(Color.black);
+            cs.newLineAtOffset(fontSize, height - leading);
+            cs.setLeading(leading);
+
+            X509Certificate cert = (X509Certificate) getCertificateChain()[0];
+            // https://stackoverflow.com/questions/2914521/
+            X500Name x500Name = new X500Name(cert.getSubjectX500Principal().getName());
+            RDN cn = x500Name.getRDNs(BCStyle.CN)[0];
+            String name = IETFUtils.valueToString(cn.getFirst().getValue());
+
+            String date = signature.getSignDate().getTime().toString();
+            String reason = signature.getReason();
+
+            cs.showText("Signed by " + name);
+            cs.newLine();
+            cs.showText(date);
+            cs.newLine();
+            cs.showText(reason);
+            cs.endText();
+        }
+
+        /**
+         * Russian e-signature stamp: a blue bordered box with a centred header and the certificate
+         * serial, owner and validity period, rendered when the instance locale is Russian (see
+         * {@code SYSTEM_DEFAULTLOCALE}).
+         */
+        /**
+         * Build the detail lines of the Russian stamp: certificate serial and owner, the signing
+         * date, and the signer-supplied reason and location when present.
+         */
+        private List<String> buildRussianBodyLines(PDSignature signature) {
+            X509Certificate cert = (X509Certificate) getCertificateChain()[0];
+            X500Name x500Name = new X500Name(cert.getSubjectX500Principal().getName());
+            RDN cn = x500Name.getRDNs(BCStyle.CN)[0];
+            String owner = IETFUtils.valueToString(cn.getFirst().getValue());
+
+            String serial = cert.getSerialNumber().toString(16).toUpperCase(Locale.ROOT);
+            if (serial.length() % 2 != 0) {
+                serial = "0" + serial;
+            }
+
+            String signedAt = "";
+            if (signature.getSignDate() != null) {
+                signedAt =
+                        signature
+                                .getSignDate()
+                                .toInstant()
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDateTime()
+                                .format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
+            }
+
+            List<String> lines = new ArrayList<>();
+            lines.add("Сертификат: " + serial);
+            lines.add("Владелец: " + owner);
+            lines.add("Подписано: " + signedAt);
+            String reason = signature.getReason();
+            if (reason != null && !reason.isBlank()) {
+                lines.add("Примечание: " + reason);
+            }
+            String location = signature.getLocation();
+            if (location != null && !location.isBlank()) {
+                lines.add("Место: " + location);
+            }
+            return lines;
+        }
+
+        private void drawRussianStamp(
+                PDPageContentStream cs,
+                PDFont font,
+                List<String> bodyLines,
+                float boxWidth,
+                float boxHeight)
+                throws IOException {
+            Color blue = new Color(0, 51, 204);
+
+            // Blue border, like the conventional Russian e-signature stamp.
+            cs.setStrokingColor(blue);
+            cs.setLineWidth(1f);
+            cs.addRect(1.5f, 1.5f, boxWidth - 3f, boxHeight - 3f);
+            cs.stroke();
+
+            cs.setNonStrokingColor(blue);
+            float headerSize = 10f;
+            float bodySize = 8f;
+            drawCentered(cs, font, headerSize, "ДОКУМЕНТ ПОДПИСАН", boxWidth, boxHeight - 16f);
+            drawCentered(cs, font, headerSize, "ЦИФРОВОЙ ПОДПИСЬЮ", boxWidth, boxHeight - 28f);
+
+            float leftX = 10f;
+            float y = boxHeight - 46f;
+            for (String line : bodyLines) {
+                drawLine(cs, font, bodySize, line, leftX, y);
+                y -= 14f;
+            }
+        }
+
+        private static void drawLine(
+                PDPageContentStream cs, PDFont font, float size, String text, float x, float y)
+                throws IOException {
+            cs.beginText();
+            cs.setFont(font, size);
+            cs.newLineAtOffset(x, y);
+            cs.showText(text);
+            cs.endText();
+        }
+
+        private static void drawCentered(
+                PDPageContentStream cs,
+                PDFont font,
+                float size,
+                String text,
+                float boxWidth,
+                float y)
+                throws IOException {
+            float textWidth = font.getStringWidth(text) / 1000f * size;
+            drawLine(cs, font, size, text, (boxWidth - textWidth) / 2f, y);
         }
     }
 }
