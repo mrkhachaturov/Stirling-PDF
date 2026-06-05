@@ -1657,7 +1657,6 @@ editSelectDescription = "Click an existing annotation to edit its color, opacity
 editText = "Edit"
 fillColor = "Fill Color"
 fillOpacity = "Fill Opacity"
-fontSize = "Font size"
 freehandHighlighter = "Freehand Highlighter"
 highlight = "Highlight"
 imagePreview = "Preview"
@@ -2241,6 +2240,7 @@ title = "Certificate Signing"
 viewed = "Viewed"
 
 [certSign.appearance]
+fontSize = "Font size"
 invisible = "Invisible"
 stepTitle = "Signature Appearance"
 visibility = "Visibility"
@@ -2508,10 +2508,18 @@ pdfNotReadyDesc = "The signed PDF is being generated. Please try again in a mome
 results = "Signed PDF"
 submit = "Sign PDF"
 
+[certSign.signMode]
+autoPersonal = "Auto (personal)"
+
 [certSign.signMode.tooltip.auto]
 text = "Signs with a server <b>self-signed</b> certificate. Same <b>tamper-evident seal</b> and <b>audit trail</b>; typically shows <b>Unverified</b> in viewers."
 title = "Auto - Zero-setup, instant system seal"
 use = "Use when: you need speed and consistent internal identity across reviews and records."
+
+[certSign.signMode.tooltip.autoPersonal]
+text = "Signs with your <b>personal certificate</b> issued by the organization CA. Per-person identity; displays as <b>Trusted</b> in viewers when the CA chain is recognized."
+title = "Auto - Personal certificate"
+use = "Use when: each signer needs their own verifiable identity, no setup."
 
 [certSign.signMode.tooltip.header]
 title = "About PDF Signatures"

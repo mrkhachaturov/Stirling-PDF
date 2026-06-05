@@ -79,8 +79,11 @@ import stirling.software.SPDF.model.api.security.SignPDFWithCertRequest;
 import stirling.software.SPDF.service.HardwareKeyStoreService;
 import stirling.software.common.annotations.AutoJobPostMapping;
 import stirling.software.common.enumeration.ResourceWeight;
+import stirling.software.common.model.ApplicationProperties;
 import stirling.software.common.service.CustomPDFDocumentFactory;
 import stirling.software.common.service.ServerCertificateServiceInterface;
+import stirling.software.common.service.UserCertificateServiceInterface;
+import stirling.software.common.service.UserServiceInterface;
 import stirling.software.common.util.ExceptionUtils;
 import stirling.software.common.util.GeneralUtils;
 import stirling.software.common.util.TempFile;
@@ -111,18 +114,45 @@ public class CertSignController {
 
     private final CustomPDFDocumentFactory pdfDocumentFactory;
     private final ServerCertificateServiceInterface serverCertificateService;
+    private final UserCertificateServiceInterface userCertificateService;
+    private final UserServiceInterface userService;
     private final TempFileManager tempFileManager;
     private final HardwareKeyStoreService hardwareKeyStoreService;
+    private final ApplicationProperties applicationProperties;
 
     public CertSignController(
             CustomPDFDocumentFactory pdfDocumentFactory,
             @Autowired(required = false) ServerCertificateServiceInterface serverCertificateService,
+            @Autowired(required = false) UserCertificateServiceInterface userCertificateService,
+            @Autowired(required = false) UserServiceInterface userService,
             TempFileManager tempFileManager,
-            HardwareKeyStoreService hardwareKeyStoreService) {
+            HardwareKeyStoreService hardwareKeyStoreService,
+            ApplicationProperties applicationProperties) {
         this.pdfDocumentFactory = pdfDocumentFactory;
         this.serverCertificateService = serverCertificateService;
+        this.userCertificateService = userCertificateService;
+        this.userService = userService;
         this.tempFileManager = tempFileManager;
         this.hardwareKeyStoreService = hardwareKeyStoreService;
+        this.applicationProperties = applicationProperties;
+    }
+
+    /**
+     * Resolve the TSA URL used to embed an RFC 3161 signature timestamp (PAdES B-T) at signing
+     * time, or {@code null} when timestamping is disabled. Shared by the standalone signing
+     * endpoint and the collaborative finalization path so both produce long-lived signatures.
+     */
+    public static String resolveSigningTsaUrl(ApplicationProperties applicationProperties) {
+        if (applicationProperties == null) {
+            return null;
+        }
+        ApplicationProperties.Security.Timestamp ts =
+                applicationProperties.getSecurity().getTimestamp();
+        if (ts == null || !ts.isSigningEnabled()) {
+            return null;
+        }
+        String url = ts.getDefaultTsaUrl();
+        return (url == null || url.isBlank()) ? null : url;
     }
 
     public static void sign(
@@ -279,6 +309,22 @@ public class CertSignController {
                 signingProvider = pkcs11Session.provider();
                 keystorePassword = password;
                 break;
+            case "USER_CERT":
+                if (userCertificateService == null || !userCertificateService.isEnabled()) {
+                    throw ExceptionUtils.createIllegalArgumentException(
+                            "error.userCertificateNotAvailable",
+                            "Personal certificate signing is not available or disabled");
+                }
+                String currentUsername =
+                        userService != null ? userService.getCurrentUsername() : null;
+                if (StringUtils.isBlank(currentUsername)) {
+                    throw ExceptionUtils.createIllegalArgumentException(
+                            "error.userCertificateRequiresAuth",
+                            "Personal certificate signing requires an authenticated user");
+                }
+                ks = userCertificateService.getOrCreateUserKeyStore(currentUsername);
+                keystorePassword = userCertificateService.getUserKeystorePassword(currentUsername);
+                break;
             default:
                 throw ExceptionUtils.createIllegalArgumentException(
                         "error.invalidArgument",
@@ -289,6 +335,7 @@ public class CertSignController {
         char[] pin = keystorePassword != null ? keystorePassword.toCharArray() : null;
         CreateSignature createSignature =
                 new CreateSignature(ks, pin, request.getAlias(), signingProvider);
+        createSignature.setTsaUrl(resolveSigningTsaUrl(applicationProperties));
         TempFile signedOut = tempFileManager.createManagedTempFile(".pdf");
         try (OutputStream os = new FileOutputStream(signedOut.getFile())) {
             sign(

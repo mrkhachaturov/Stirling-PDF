@@ -2508,10 +2508,20 @@ pdfNotReadyDesc = "The signed PDF is being generated. Please try again in a mome
 results = "Signed PDF"
 submit = "Sign PDF"
 
+[certSign.signMode]
+stepTitle = "Sign Mode"
+auto = "Auto (server)"
+autoPersonal = "Auto (personal)"
+
 [certSign.signMode.tooltip.auto]
 text = "Signs with a server <b>self-signed</b> certificate. Same <b>tamper-evident seal</b> and <b>audit trail</b>; typically shows <b>Unverified</b> in viewers."
 title = "Auto - Zero-setup, instant system seal"
 use = "Use when: you need speed and consistent internal identity across reviews and records."
+
+[certSign.signMode.tooltip.autoPersonal]
+text = "Signs with your <b>personal certificate</b> issued by the organisation CA. Per-person identity; displays as <b>Trusted</b> in viewers when the CA chain is recognised."
+title = "Auto - Personal certificate"
+use = "Use when: each signer needs their own verifiable identity, no setup."
 
 [certSign.signMode.tooltip.header]
 title = "About PDF Signatures"

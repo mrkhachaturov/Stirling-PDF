@@ -17,6 +17,14 @@ import lombok.Getter;
 @Getter
 public class UserCertificateSettings {
 
+    /**
+     * Whether the per-user certificate is offered as a managed ("Auto") signing identity in the
+     * signing tools, independent of how it is issued ({@link #issuer}). When {@code false} the
+     * per-user option is not advertised; enrolment at login still depends on {@link #issuer}.
+     */
+    @Value("${system.userCertificate.enabled:false}")
+    private boolean enabled;
+
     /** Selected issuer: {@code selfsigned} (default) or {@code stepca}. */
     @Value("${system.userCertificate.issuer:selfsigned}")
     private String issuer;

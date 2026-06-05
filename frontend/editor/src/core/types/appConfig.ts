@@ -33,6 +33,7 @@ export interface AppConfig {
   SSOAutoLogin?: boolean;
   serverCertificateEnabled?: boolean;
   hardwareSigningAvailable?: boolean;
+  userCertificateEnabled?: boolean;
   enableMobileScanner?: boolean;
   mobileScannerConvertToPdf?: boolean;
   mobileScannerImageResolution?: string;

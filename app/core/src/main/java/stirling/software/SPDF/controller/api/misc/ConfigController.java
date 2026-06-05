@@ -25,6 +25,7 @@ import stirling.software.common.configuration.AppConfig;
 import stirling.software.common.configuration.interfaces.ShowAdminInterface;
 import stirling.software.common.model.ApplicationProperties;
 import stirling.software.common.service.ServerCertificateServiceInterface;
+import stirling.software.common.service.UserCertificateServiceInterface;
 import stirling.software.common.service.UserServiceInterface;
 import stirling.software.common.util.GeneralUtils;
 
@@ -37,6 +38,7 @@ public class ConfigController {
     private final ApplicationContext applicationContext;
     private final EndpointConfiguration endpointConfiguration;
     private final ServerCertificateServiceInterface serverCertificateService;
+    private final UserCertificateServiceInterface userCertificateService;
     private final UserServiceInterface userService;
     private final ShowAdminInterface showAdmin;
     private final stirling.software.common.service.LicenseServiceInterface licenseService;
@@ -49,6 +51,8 @@ public class ConfigController {
             @org.springframework.beans.factory.annotation.Autowired(required = false)
                     ServerCertificateServiceInterface serverCertificateService,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
+                    UserCertificateServiceInterface userCertificateService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
                     UserServiceInterface userService,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
                     ShowAdminInterface showAdmin,
@@ -59,6 +63,7 @@ public class ConfigController {
         this.applicationContext = applicationContext;
         this.endpointConfiguration = endpointConfiguration;
         this.serverCertificateService = serverCertificateService;
+        this.userCertificateService = userCertificateService;
         this.userService = userService;
         this.showAdmin = showAdmin;
         this.licenseService = licenseService;
@@ -361,6 +366,11 @@ public class ConfigController {
                 hardwareSigningAvailable = mt != null && mt.startsWith("Client-");
             }
             configData.put("hardwareSigningAvailable", hardwareSigningAvailable);
+
+            // Per-user (personal) certificate settings — drives the managed "Auto" personal option
+            configData.put(
+                    "userCertificateEnabled",
+                    userCertificateService != null && userCertificateService.isEnabled());
 
             // Legal settings
             configData.put(
