@@ -72,8 +72,23 @@ const withSignatureAppearance = (
     apiParams.reason = parameters.reason;
     apiParams.location = parameters.location;
     apiParams.name = parameters.name;
-    apiParams.pageNumber = parameters.pageNumber;
     apiParams.showLogo = parameters.showLogo;
+    apiParams.fontSize = parameters.fontSize;
+    apiParams.textColor = parameters.textColor;
+    apiParams.showBorder = parameters.showBorder;
+
+    // A manual placement also pins the page it was dropped on; otherwise use the chosen page
+    // and let the backend position the stamp automatically.
+    const placement = parameters.stampPlacement;
+    if (placement) {
+      apiParams.pageNumber = placement.page + 1;
+      apiParams.stampX = placement.x;
+      apiParams.stampY = placement.y;
+      apiParams.stampWidth = placement.width;
+      apiParams.stampHeight = placement.height;
+    } else {
+      apiParams.pageNumber = parameters.pageNumber;
+    }
   }
   return apiParams;
 };
@@ -133,6 +148,26 @@ export const certSignFromApiParams = (
     result.pageNumber = apiParams.pageNumber;
   }
   if (apiParams.showLogo !== undefined) result.showLogo = apiParams.showLogo;
+  if (apiParams.fontSize !== undefined) result.fontSize = apiParams.fontSize;
+  if (apiParams.textColor !== undefined) result.textColor = apiParams.textColor;
+  if (apiParams.showBorder !== undefined) {
+    result.showBorder = apiParams.showBorder;
+  }
+  const { stampX, stampY, stampWidth, stampHeight } = apiParams;
+  if (
+    stampX !== undefined &&
+    stampY !== undefined &&
+    stampWidth !== undefined &&
+    stampHeight !== undefined
+  ) {
+    result.stampPlacement = {
+      page: (apiParams.pageNumber ?? 1) - 1,
+      x: stampX,
+      y: stampY,
+      width: stampWidth,
+      height: stampHeight,
+    };
+  }
 
   return result;
 };

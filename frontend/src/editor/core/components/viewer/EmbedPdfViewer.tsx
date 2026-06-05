@@ -563,7 +563,9 @@ const EmbedPdfViewerContent = ({
     selectedTool === "sign" ||
     selectedTool === "addText" ||
     selectedTool === "addImage" ||
-    selectedTool === "annotate";
+    selectedTool === "annotate" ||
+    // certSign reuses the placement overlay to position its (server-rendered) visible stamp
+    selectedTool === "certSign";
   const isManualRedactMode = selectedTool === "redact";
 
   // Live layer visibility is controlled via showBakedAnnotations CSS; unmounting

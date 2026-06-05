@@ -1,4 +1,12 @@
-import { Stack, Text, TextInput, NumberInput } from "@mantine/core";
+import {
+  Stack,
+  Text,
+  TextInput,
+  NumberInput,
+  ColorInput,
+  Switch,
+  Group,
+} from "@mantine/core";
 import { Button } from "@editor/ui/Button";
 import { useTranslation } from "react-i18next";
 import { CertSignParameters } from "@editor/hooks/tools/certSign/useCertSignParameters";
@@ -11,14 +19,27 @@ interface SignatureAppearanceSettingsProps {
     value: CertSignParameters[K],
   ) => void;
   disabled?: boolean;
+  // Whether the viewer is armed for placement (waiting for the user to click the page)
+  isPlacing?: boolean;
+  // Enter placement mode so the user can drop the stamp box on the PDF
+  onPlaceOnPage?: () => void;
+  // Drop any manual placement and fall back to automatic positioning
+  onClearPlacement?: () => void;
 }
 
 const SignatureAppearanceSettings = ({
   parameters,
   onParameterChange,
   disabled = false,
+  isPlacing = false,
+  onPlaceOnPage,
+  onClearPlacement,
 }: SignatureAppearanceSettingsProps) => {
   const { t } = useTranslation();
+
+  const placement = parameters.stampPlacement;
+  const hasPlacement = placement != null;
+  const canPlace = Boolean(onPlaceOnPage);
 
   return (
     <Stack gap="md">
@@ -105,18 +126,128 @@ const SignatureAppearanceSettings = ({
             }
             disabled={disabled}
           />
-          <NumberInput
-            label={t("certSign.pageNumber", "Page Number")}
-            value={parameters.pageNumber}
-            onChange={(value) =>
-              onParameterChange(
-                "pageNumber",
-                typeof value === "number" ? value : 1,
-              )
+
+          {/* Stamp styling — applied uniformly to the whole stamp */}
+          <Group grow align="flex-start">
+            <NumberInput
+              label={t("certSign.appearance.fontSize", "Font size")}
+              value={parameters.fontSize}
+              onChange={(value) =>
+                onParameterChange(
+                  "fontSize",
+                  typeof value === "number" ? value : 10,
+                )
+              }
+              min={6}
+              max={72}
+              disabled={disabled}
+            />
+            <ColorInput
+              label={t("certSign.appearance.textColor", "Text colour")}
+              format="hex"
+              value={parameters.textColor}
+              onChange={(value) => onParameterChange("textColor", value)}
+              disabled={disabled}
+            />
+          </Group>
+          <Switch
+            label={t("certSign.appearance.showBorder", "Show border")}
+            checked={parameters.showBorder}
+            onChange={(event) =>
+              onParameterChange("showBorder", event.currentTarget.checked)
             }
-            min={1}
             disabled={disabled}
           />
+
+          {/* Placement — automatic by default, optional manual placement on the PDF */}
+          {canPlace && (
+            <Stack gap="xs">
+              <Text size="sm" fw={500}>
+                {t("certSign.appearance.placement.title", "Placement")}
+              </Text>
+
+              {isPlacing ? (
+                <Text size="xs" c="dimmed">
+                  {t(
+                    "certSign.appearance.placement.hint",
+                    "Click the page where the stamp should go.",
+                  )}
+                </Text>
+              ) : hasPlacement ? (
+                <Stack gap="xs">
+                  <Text size="xs" c="dimmed">
+                    {t(
+                      "certSign.appearance.placement.set",
+                      "Manual placement set on page {{page}}.",
+                      { page: (placement?.page ?? 0) + 1 },
+                    )}
+                  </Text>
+                  <Group grow>
+                    <Button
+                      variant="secondary"
+                      onClick={onPlaceOnPage}
+                      disabled={disabled}
+                    >
+                      {t(
+                        "certSign.appearance.placement.reposition",
+                        "Reposition",
+                      )}
+                    </Button>
+                    <Button
+                      variant="tertiary"
+                      accent="danger"
+                      onClick={onClearPlacement}
+                      disabled={disabled}
+                    >
+                      {t(
+                        "certSign.appearance.placement.reset",
+                        "Reset to auto",
+                      )}
+                    </Button>
+                  </Group>
+                </Stack>
+              ) : (
+                <Stack gap="xs">
+                  <NumberInput
+                    label={t("certSign.pageNumber", "Page Number")}
+                    value={parameters.pageNumber}
+                    onChange={(value) =>
+                      onParameterChange(
+                        "pageNumber",
+                        typeof value === "number" ? value : 1,
+                      )
+                    }
+                    min={1}
+                    disabled={disabled}
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={onPlaceOnPage}
+                    disabled={disabled}
+                  >
+                    {t("certSign.appearance.placement.place", "Place on page")}
+                  </Button>
+                </Stack>
+              )}
+            </Stack>
+          )}
+
+          {/* Fallback page selector when manual placement is unavailable */}
+          {!canPlace && (
+            <NumberInput
+              label={t("certSign.pageNumber", "Page Number")}
+              value={parameters.pageNumber}
+              onChange={(value) =>
+                onParameterChange(
+                  "pageNumber",
+                  typeof value === "number" ? value : 1,
+                )
+              }
+              min={1}
+              disabled={disabled}
+            />
+          )}
+
           <Stack gap="xs">
             <Text size="sm" fw={500}>
               {t("certSign.logoTitle", "Logo")}
