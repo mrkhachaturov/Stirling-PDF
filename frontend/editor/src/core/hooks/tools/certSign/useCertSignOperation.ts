@@ -74,8 +74,23 @@ export const buildCertSignFormData = (
     formData.append("reason", parameters.reason);
     formData.append("location", parameters.location);
     formData.append("name", parameters.name);
-    formData.append("pageNumber", parameters.pageNumber.toString());
     formData.append("showLogo", parameters.showLogo.toString());
+    formData.append("fontSize", parameters.fontSize.toString());
+    formData.append("textColor", parameters.textColor);
+    formData.append("showBorder", parameters.showBorder.toString());
+
+    // A manual placement also pins the page it was dropped on; otherwise use the chosen page
+    // and let the backend position the stamp automatically.
+    const placement = parameters.stampPlacement;
+    if (placement) {
+      formData.append("pageNumber", (placement.page + 1).toString());
+      formData.append("stampX", placement.x.toString());
+      formData.append("stampY", placement.y.toString());
+      formData.append("stampWidth", placement.width.toString());
+      formData.append("stampHeight", placement.height.toString());
+    } else {
+      formData.append("pageNumber", parameters.pageNumber.toString());
+    }
   }
 
   return formData;

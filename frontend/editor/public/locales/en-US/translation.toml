@@ -1657,6 +1657,7 @@ editSelectDescription = "Click an existing annotation to edit its color, opacity
 editText = "Edit"
 fillColor = "Fill Color"
 fillOpacity = "Fill Opacity"
+fontSize = "Font size"
 freehandHighlighter = "Freehand Highlighter"
 highlight = "Highlight"
 imagePreview = "Preview"
@@ -2242,12 +2243,22 @@ viewed = "Viewed"
 [certSign.appearance]
 fontSize = "Font size"
 invisible = "Invisible"
+showBorder = "Show border"
 stepTitle = "Signature Appearance"
+textColor = "Text color"
 visibility = "Visibility"
 visible = "Visible"
 
 [certSign.appearance.options]
 title = "Signature Details"
+
+[certSign.appearance.placement]
+hint = "Click the page where the stamp should go."
+place = "Place on page"
+reposition = "Reposition"
+reset = "Reset to auto"
+set = "Manual placement set on page {{page}}."
+title = "Placement"
 
 [certSign.appearance.tooltip.header]
 title = "About Signature Appearance"

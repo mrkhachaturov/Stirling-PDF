@@ -93,4 +93,46 @@ public class SignPDFWithCertRequest extends PDFFile {
             defaultValue = "true",
             requiredMode = Schema.RequiredMode.REQUIRED)
     private Boolean showLogo;
+
+    @Schema(
+            description =
+                    "Left edge of the visible signature stamp, as a fraction (0-1) of the page"
+                            + " width, measured from the left. When this and the other stamp"
+                            + " coordinates are supplied the stamp is placed there instead of the"
+                            + " automatic bottom-right position.")
+    private Float stampX;
+
+    @Schema(
+            description =
+                    "Top edge of the visible signature stamp, as a fraction (0-1) of the page"
+                            + " height, measured from the top.")
+    private Float stampY;
+
+    @Schema(
+            description =
+                    "Width of the visible signature stamp, as a fraction (0-1) of the page width.")
+    private Float stampWidth;
+
+    @Schema(
+            description =
+                    "Height of the visible signature stamp, as a fraction (0-1) of the page"
+                            + " height.")
+    private Float stampHeight;
+
+    @Schema(
+            description =
+                    "Base font size (points) for the visible signature text. Header and body lines"
+                            + " scale from this value.")
+    private Integer fontSize;
+
+    @Schema(
+            description =
+                    "Colour applied to the whole visible signature (text and border), as a"
+                            + " #RRGGBB hex string.")
+    private String textColor;
+
+    @Schema(
+            description = "Whether to draw the border around the visible signature stamp",
+            defaultValue = "true")
+    private Boolean showBorder;
 }

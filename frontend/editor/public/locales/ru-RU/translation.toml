@@ -2241,13 +2241,24 @@ title = "Подписание сертификатом"
 viewed = "Просмотрено"
 
 [certSign.appearance]
+fontSize = "Размер шрифта"
 invisible = "Невидимая"
+showBorder = "Показывать рамку"
 stepTitle = "Вид подписи"
+textColor = "Цвет текста"
 visibility = "Видимость"
 visible = "Видимая"
 
 [certSign.appearance.options]
 title = "Сведения о подписи"
+
+[certSign.appearance.placement]
+hint = "Кликните на странице, где должен стоять штамп."
+place = "Разместить на странице"
+reposition = "Переместить"
+reset = "Сбросить на авто"
+set = "Ручное размещение задано на стр. {{page}}."
+title = "Размещение"
 
 [certSign.appearance.tooltip.header]
 title = "О внешнем виде подписи"
