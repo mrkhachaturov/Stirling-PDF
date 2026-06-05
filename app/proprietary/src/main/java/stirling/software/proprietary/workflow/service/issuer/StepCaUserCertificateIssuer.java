@@ -13,6 +13,7 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.Security;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -183,7 +184,15 @@ public class StepCaUserCertificateIssuer implements UserCertificateIssuer {
         JsonNode root = MAPPER.readTree(responseBody);
         List<String> pems = new ArrayList<>();
 
-        JsonNode chainNode = root.get("certChainPem");
+        // step-ca's /1.0/sign returns the full leaf-first chain as an array. Depending on the
+        // version/serialiser the field is named "certChain" or "certChainPem"; accept either.
+        // Reading only "crt" (leaf) + "ca" (immediate issuer) drops higher intermediates, so the
+        // signature can't be chained to the trusted root and validators report "unable to find
+        // valid certification path".
+        JsonNode chainNode = root.get("certChain");
+        if (chainNode == null || !chainNode.isArray() || chainNode.isEmpty()) {
+            chainNode = root.get("certChainPem");
+        }
         if (chainNode != null && chainNode.isArray() && !chainNode.isEmpty()) {
             for (JsonNode node : chainNode) {
                 if (node.isTextual() && !node.asText().isBlank()) {
@@ -204,17 +213,20 @@ public class StepCaUserCertificateIssuer implements UserCertificateIssuer {
         if (pems.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    "step-ca response contained no certificate (expected 'certChainPem' or 'crt')");
+                    "step-ca response contained no certificate (expected 'certChain', 'certChainPem'"
+                            + " or 'crt')");
         }
 
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
-        List<X509Certificate> chain = new ArrayList<>(pems.size());
+        List<X509Certificate> chain = new ArrayList<>();
         for (String pem : pems) {
-            X509Certificate cert =
-                    (X509Certificate)
-                            factory.generateCertificate(
-                                    new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)));
-            chain.add(cert);
+            // A single PEM string may concatenate multiple certificates (e.g. a bundled "ca"), so
+            // parse every certificate it contains rather than just the first.
+            for (Certificate cert :
+                    factory.generateCertificates(
+                            new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)))) {
+                chain.add((X509Certificate) cert);
+            }
         }
         return chain.toArray(new X509Certificate[0]);
     }
