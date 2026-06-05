@@ -26,9 +26,15 @@ type CertSignApiParams = ToolApiParams[typeof ENDPOINT];
 export const certSignToApiParams = (
   parameters: CertSignParameters,
 ): CertSignApiParams => {
-  // AUTO mode signs with the server certificate; no keystore/password is sent.
+  // AUTO mode signs with a managed identity: the UI sets certType to "USER_CERT" (personal
+  // cert) or "SERVER" (shared cert); default to SERVER for safety. No keystore/password is sent.
   if (parameters.signMode === "AUTO") {
-    return withSignatureAppearance({ certType: "SERVER" }, parameters);
+    return withSignatureAppearance(
+      {
+        certType: parameters.certType === "USER_CERT" ? "USER_CERT" : "SERVER",
+      },
+      parameters,
+    );
   }
 
   const apiParams: CertSignApiParams = {
@@ -100,11 +106,16 @@ export const certSignFromApiParams = (
   apiParams: CertSignApiParams,
 ): Partial<CertSignParameters> => {
   const result: Partial<CertSignParameters> = {
-    signMode: apiParams.certType === "SERVER" ? "AUTO" : "MANUAL",
+    signMode:
+      apiParams.certType === "SERVER" || apiParams.certType === "USER_CERT"
+        ? "AUTO"
+        : "MANUAL",
     showSignature: apiParams.showSignature ?? defaultParameters.showSignature,
   };
 
-  if (apiParams.certType !== "SERVER") {
+  if (apiParams.certType === "USER_CERT") {
+    result.certType = "USER_CERT";
+  } else if (apiParams.certType !== "SERVER") {
     result.certType = apiParams.certType;
     result.password = apiParams.password ?? defaultParameters.password;
   }

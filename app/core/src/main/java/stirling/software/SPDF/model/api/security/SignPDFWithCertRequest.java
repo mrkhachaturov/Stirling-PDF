@@ -19,8 +19,18 @@ public class SignPDFWithCertRequest extends PDFFile {
                             + " the server's organisation, not the user; self-signed by default, so"
                             + " other PDF readers may show it unverified. PEM needs"
                             + " certFile+privateKeyFile, PKCS12/PFX p12File, JKS jksFile."
-                            + " WINDOWS_STORE/PKCS11: desktop app only.",
-            allowableValues = {"SERVER", "PEM", "PKCS12", "PFX", "JKS", "WINDOWS_STORE", "PKCS11"},
+                            + " WINDOWS_STORE/PKCS11: desktop app only. USER_CERT: the signed-in"
+                            + " user's personal certificate, no file or password.",
+            allowableValues = {
+                "SERVER",
+                "PEM",
+                "PKCS12",
+                "PFX",
+                "JKS",
+                "WINDOWS_STORE",
+                "PKCS11",
+                "USER_CERT"
+            },
             requiredMode = Schema.RequiredMode.REQUIRED)
     private String certType;
 

@@ -51,6 +51,9 @@ class ConfigControllerTest {
                         applicationContext,
                         endpointConfiguration,
                         serverCertificateService,
+                        mock(
+                                stirling.software.common.service.UserCertificateServiceInterface
+                                        .class),
                         userService,
                         showAdmin,
                         licenseService,

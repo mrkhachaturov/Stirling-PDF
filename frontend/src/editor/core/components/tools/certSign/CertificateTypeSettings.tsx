@@ -29,6 +29,9 @@ const CertificateTypeSettings = ({
   const { t } = useTranslation();
   const { config } = useAppConfig();
   const isServerCertificateEnabled = config?.serverCertificateEnabled ?? false;
+  const isUserCertificateEnabled = config?.userCertificateEnabled ?? false;
+  // Per-user personal cert takes priority as the managed "Auto" identity when enabled.
+  const isAutoEnabled = isServerCertificateEnabled || isUserCertificateEnabled;
   // Hardware-backed signing only works when the backend runs locally (desktop app).
   const isHardwareAvailable = config?.hardwareSigningAvailable ?? false;
 
@@ -36,14 +39,14 @@ const CertificateTypeSettings = ({
   // (e.g. an automation saved with DEVICE running on a server). Runs as an effect so we don't
   // call the parent's setter while rendering.
   useEffect(() => {
-    if (parameters.signMode === "AUTO" && !isServerCertificateEnabled) {
+    if (parameters.signMode === "AUTO" && !isAutoEnabled) {
       onParameterChange("signMode", "MANUAL");
     } else if (parameters.signMode === "DEVICE" && !isHardwareAvailable) {
       onParameterChange("signMode", "MANUAL");
     }
   }, [
     parameters.signMode,
-    isServerCertificateEnabled,
+    isAutoEnabled,
     isHardwareAvailable,
     onParameterChange,
   ]);
@@ -55,9 +58,14 @@ const CertificateTypeSettings = ({
     }
   };
 
+  // Selects the managed identity held by the server: the user's personal certificate when
+  // per-user certificates are enabled, otherwise the shared server certificate.
   const selectServer = () => {
     onParameterChange("signMode", "AUTO");
-    onParameterChange("certType", "");
+    onParameterChange(
+      "certType",
+      isUserCertificateEnabled ? "USER_CERT" : "SERVER",
+    );
   };
 
   const selectDevice = () => {
@@ -100,7 +108,7 @@ const CertificateTypeSettings = ({
         >
           {t("certSign.source.upload", "Upload")}
         </Button>
-        {isServerCertificateEnabled && (
+        {isAutoEnabled && (
           <Button
             variant={parameters.signMode === "AUTO" ? "primary" : "secondary"}
             accent={parameters.signMode === "AUTO" ? "default" : "neutral"}
@@ -108,7 +116,9 @@ const CertificateTypeSettings = ({
             disabled={disabled}
             style={sourceButtonStyle}
           >
-            {t("certSign.source.server", "Server")}
+            {isUserCertificateEnabled
+              ? t("certSign.signMode.autoPersonal", "Auto (personal)")
+              : t("certSign.source.server", "Server")}
           </Button>
         )}
         {isHardwareAvailable && (

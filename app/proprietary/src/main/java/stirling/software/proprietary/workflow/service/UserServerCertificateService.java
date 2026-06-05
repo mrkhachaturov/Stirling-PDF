@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import stirling.software.common.service.UserCertificateServiceInterface;
 import stirling.software.proprietary.security.database.repository.UserRepository;
 import stirling.software.proprietary.security.model.User;
 import stirling.software.proprietary.workflow.model.CertificateType;
@@ -25,11 +26,12 @@ import stirling.software.proprietary.workflow.repository.UserServerCertificateRe
 import stirling.software.proprietary.workflow.service.issuer.IssuedUserCertificate;
 import stirling.software.proprietary.workflow.service.issuer.UserCertificateIssuanceRequest;
 import stirling.software.proprietary.workflow.service.issuer.UserCertificateIssuerResolver;
+import stirling.software.proprietary.workflow.service.issuer.UserCertificateSettings;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class UserServerCertificateService {
+public class UserServerCertificateService implements UserCertificateServiceInterface {
 
     private static final String KEYSTORE_ALIAS = "stirling-pdf-user-cert";
     private static final String DEFAULT_PASSWORD_PREFIX = "stirling-user-cert-";
@@ -38,6 +40,35 @@ public class UserServerCertificateService {
     private final UserRepository userRepository;
     private final MetadataEncryptionService metadataEncryptionService;
     private final UserCertificateIssuerResolver issuerResolver;
+    private final UserCertificateSettings userCertificateSettings;
+
+    // --- UserCertificateServiceInterface (core-facing seam, username-keyed) ---
+
+    @Override
+    public boolean isEnabled() {
+        return userCertificateSettings.isEnabled();
+    }
+
+    @Override
+    @Transactional
+    public KeyStore getOrCreateUserKeyStore(String username) throws Exception {
+        Long userId = resolveUserId(username);
+        getOrCreateUserCertificate(userId);
+        return getUserKeyStore(userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String getUserKeystorePassword(String username) throws Exception {
+        return getUserKeystorePassword(resolveUserId(username));
+    }
+
+    private Long resolveUserId(String username) {
+        return userRepository
+                .findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + username))
+                .getId();
+    }
 
     /** Get or create user certificate (auto-generate if not exists) */
     @Transactional
