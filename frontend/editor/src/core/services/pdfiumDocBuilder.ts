@@ -60,14 +60,23 @@ export const StandardFonts = {
 
 export class PdfiumFont {
   readonly name: string;
+  /** Handle of an embedded TrueType font (from FPDFText_LoadFont), or null for a standard font. */
+  readonly _fontHandle: number | null;
+  private readonly _cssFamily: string | null;
   private _canvas: OffscreenCanvas | HTMLCanvasElement | null = null;
   private _ctx:
     | CanvasRenderingContext2D
     | OffscreenCanvasRenderingContext2D
     | null = null;
 
-  constructor(name: string) {
+  constructor(
+    name: string,
+    fontHandle: number | null = null,
+    cssFamily: string | null = null,
+  ) {
     this.name = name;
+    this._fontHandle = fontHandle;
+    this._cssFamily = cssFamily;
   }
 
   /**
@@ -89,6 +98,7 @@ export class PdfiumFont {
 
   /** Map PDF font name to a CSS font-family for canvas measurement. */
   private _cssFontFamily(): string {
+    if (this._cssFamily) return this._cssFamily;
     if (this.name.startsWith("Helvetica"))
       return "Helvetica, Arial, sans-serif";
     if (this.name.startsWith("Courier")) return "Courier, monospace";
@@ -208,7 +218,12 @@ export class PdfiumPage {
     const m = this._m;
     const fontName = font?.name ?? "Helvetica";
 
-    const textObjPtr = m.FPDFPageObj_NewTextObj(this._docPtr, fontName, size);
+    // An embedded TrueType font (e.g. for Cyrillic) is drawn via its handle; standard PDF fonts
+    // (WinAnsi-encoded) only cover Latin-1 and render non-Latin text as garbage.
+    const textObjPtr =
+      font?._fontHandle != null
+        ? m.FPDFPageObj_CreateTextObj(this._docPtr, font._fontHandle, size)
+        : m.FPDFPageObj_NewTextObj(this._docPtr, fontName, size);
     if (!textObjPtr) return;
 
     // Set text content (UTF-16)
@@ -337,6 +352,7 @@ export class PdfiumDocument {
   readonly _docPtr: number;
   private _pages: PdfiumPage[] = [];
   private _fonts: Map<string, PdfiumFont> = new Map();
+  private _fontDataPtrs: number[] = [];
 
   private constructor(m: WrappedPdfiumModule, docPtr: number) {
     this._m = m;
@@ -375,6 +391,30 @@ export class PdfiumDocument {
     return font;
   }
 
+  /**
+   * Embed a TrueType font from raw bytes so non-Latin text (e.g. Cyrillic) renders. The standard
+   * PDF fonts are WinAnsi-encoded and only cover Latin-1. `cssFamily` is used for canvas-based
+   * width measurement during layout.
+   */
+  async embedTrueTypeFont(
+    bytes: Uint8Array,
+    cssFamily = "Arial, sans-serif",
+  ): Promise<PdfiumFont> {
+    const m = this._m;
+    const ptr = m.pdfium.wasmExports.malloc(bytes.length);
+    if (!ptr) throw new Error("PDFium: failed to allocate font buffer");
+    new Uint8Array((m.pdfium.wasmExports as any).memory.buffer).set(bytes, ptr);
+    // FPDFText_LoadFont(doc, data, size, font_type=2 (TrueType), cid=true) — CID gives full Unicode.
+    const handle = m.FPDFText_LoadFont(this._docPtr, ptr, bytes.length, 2, true);
+    if (!handle) {
+      m.pdfium.wasmExports.free(ptr);
+      throw new Error("PDFium: failed to load embedded TrueType font");
+    }
+    // The buffer is copied into the document; keep it until save() to avoid any use-after-free.
+    this._fontDataPtrs.push(ptr);
+    return new PdfiumFont("__embedded__", handle, cssFamily);
+  }
+
   /** Embed a PNG image from raw bytes. */
   async embedPng(bytes: Uint8Array | ArrayBuffer): Promise<PdfiumImage> {
     return this._decodeImage(
@@ -410,6 +450,12 @@ export class PdfiumDocument {
       page._close();
     }
     this._m.FPDF_CloseDocument(this._docPtr);
+
+    // Free the embedded-font source buffers (safe now the document is serialized and closed).
+    for (const ptr of this._fontDataPtrs) {
+      this._m.pdfium.wasmExports.free(ptr);
+    }
+    this._fontDataPtrs = [];
 
     return new Uint8Array(buf);
   }
