@@ -113,6 +113,11 @@ public class CertSignController {
                 });
     }
 
+    // Reserved byte-range size for the embedded signature. 64 KB comfortably fits a CMS signature
+    // plus an RFC 3161 timestamp token and the TSA + signer certificate chains; PDFBox's ~9 KB
+    // default is too small once timestamping is enabled.
+    private static final int PREFERRED_SIGNATURE_SIZE = 0x10000;
+
     private final CustomPDFDocumentFactory pdfDocumentFactory;
     private final ServerCertificateServiceInterface serverCertificateService;
     private final UserCertificateServiceInterface userCertificateService;
@@ -180,18 +185,19 @@ public class CertSignController {
             signature.setLocation(location);
             signature.setReason(reason);
             signature.setSignDate(Calendar.getInstance()); // PDFBox requires Calendar
-            if (Boolean.TRUE.equals(showSignature)) {
-                int pageIndex = resolveSignaturePage(pageNumber, doc.getNumberOfPages());
-                try (SignatureOptions signatureOptions = new SignatureOptions()) {
+            try (SignatureOptions signatureOptions = new SignatureOptions()) {
+                // Reserve space for the CMS signature plus an optional RFC 3161 timestamp token and
+                // its TSA certificate chain. The default (~9 KB) overflows once timestamping is
+                // enabled ("Can't write signature, not enough space"), visible or not. Applied to
+                // every signature; non-timestamped ones are unaffected.
+                signatureOptions.setPreferredSignatureSize(PREFERRED_SIGNATURE_SIZE);
+                if (Boolean.TRUE.equals(showSignature)) {
+                    int pageIndex = resolveSignaturePage(pageNumber, doc.getNumberOfPages());
                     signatureOptions.setVisualSignature(
                             instance.createVisibleSignature(doc, signature, pageIndex, showLogo));
                     signatureOptions.setPage(pageIndex);
-
-                    doc.addSignature(signature, instance, signatureOptions);
-                    doc.saveIncremental(output);
                 }
-            } else {
-                doc.addSignature(signature, instance);
+                doc.addSignature(signature, instance, signatureOptions);
                 doc.saveIncremental(output);
             }
         }
