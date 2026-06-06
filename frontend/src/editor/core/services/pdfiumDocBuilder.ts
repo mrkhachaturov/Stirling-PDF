@@ -410,7 +410,13 @@ export class PdfiumDocument {
       ptr,
     );
     // FPDFText_LoadFont(doc, data, size, font_type=2 (TrueType), cid=true) — CID gives full Unicode.
-    const handle = m.FPDFText_LoadFont(this._docPtr, ptr, bytes.length, 2, true);
+    const handle = m.FPDFText_LoadFont(
+      this._docPtr,
+      ptr,
+      bytes.length,
+      2,
+      true,
+    );
     if (!handle) {
       m.pdfium.wasmExports.free(ptr);
       throw new Error("PDFium: failed to load embedded TrueType font");
