@@ -405,7 +405,13 @@ export class PdfiumDocument {
     if (!ptr) throw new Error("PDFium: failed to allocate font buffer");
     new Uint8Array((m.pdfium.wasmExports as any).memory.buffer).set(bytes, ptr);
     // FPDFText_LoadFont(doc, data, size, font_type=2 (TrueType), cid=true) — CID gives full Unicode.
-    const handle = m.FPDFText_LoadFont(this._docPtr, ptr, bytes.length, 2, true);
+    const handle = m.FPDFText_LoadFont(
+      this._docPtr,
+      ptr,
+      bytes.length,
+      2,
+      true,
+    );
     if (!handle) {
       m.pdfium.wasmExports.free(ptr);
       throw new Error("PDFium: failed to load embedded TrueType font");

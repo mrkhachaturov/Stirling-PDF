@@ -54,7 +54,9 @@ export const createReportPdf = async (
     try {
       const res = await fetch(`${import.meta.env.BASE_URL}fonts/${file}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await doc.embedTrueTypeFont(new Uint8Array(await res.arrayBuffer()));
+      return await doc.embedTrueTypeFont(
+        new Uint8Array(await res.arrayBuffer()),
+      );
     } catch (e) {
       console.warn(
         `Signature report: could not embed ${file}, falling back to ${fallback}`,
@@ -63,7 +65,10 @@ export const createReportPdf = async (
       return doc.embedFont(fallback);
     }
   };
-  const font = await embedReportFont("NotoSans-Regular.ttf", StandardFonts.Helvetica);
+  const font = await embedReportFont(
+    "NotoSans-Regular.ttf",
+    StandardFonts.Helvetica,
+  );
   const fontBold = await embedReportFont(
     "NotoSans-Bold.ttf",
     StandardFonts.HelveticaBold,
