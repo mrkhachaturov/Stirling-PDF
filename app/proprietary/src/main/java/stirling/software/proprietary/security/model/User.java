@@ -99,7 +99,12 @@ public class User implements UserDetails, Serializable {
 
     @ElementCollection
     @MapKeyColumn(name = "setting_key")
-    @Lob
+    // No @Lob here: on PostgreSQL @Lob maps a String to a Large Object (an OID/bigint reference in
+    // pg_largeobject), not to inline text. The setting_value column is plain "text" holding values
+    // like "false"/"ru-RU", so @Lob makes Hibernate read them as a long ("Bad value for type long :
+    // false") and every settings-bearing user fails to load. The bug is masked on H2 (the default
+    // DB) and only surfaces on PostgreSQL. Same trap our StoredFileBlob/UserServerCertificateEntity
+    // avoid for byte[] columns.
     @Column(name = "setting_value", columnDefinition = "text")
     @CollectionTable(name = "user_settings", joinColumns = @JoinColumn(name = "user_id"))
     @JsonIgnore
