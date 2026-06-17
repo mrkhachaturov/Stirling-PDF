@@ -4,6 +4,7 @@ import static org.springframework.security.oauth2.core.AuthorizationGrantType.AU
 import static stirling.software.common.util.ProviderUtils.validateProvider;
 import static stirling.software.common.util.ValidationUtils.isStringEmpty;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -15,14 +16,23 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
+import org.springframework.security.oauth2.client.oidc.authentication.OidcIdTokenValidator;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.web.client.RestTemplate;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -285,6 +295,42 @@ public class OAuth2Configuration {
                         }
                     });
             return mappedAuthorities;
+        };
+    }
+
+    /**
+     * OIDC id_token decoder factory with a generous JWKS fetch timeout.
+     *
+     * <p>Spring Security 7 / nimbus-jose-jwt hardcode a 500 ms connect/read timeout on the JWKS
+     * fetch (NimbusJwtDecoder.RestTemplateWithNimbusDefaultTimeouts). Identity providers whose
+     * per-application JWKS endpoint answers slower than that — e.g. Authentik's
+     * /application/o/&lt;slug&gt;/jwks/ consistently takes ~600 ms — make every OIDC login fail
+     * with "invalid_id_token: Read timed out". Override the factory with a 10 s timeout so login
+     * tolerates a slow IdP. See goauthentik/authentik#18192.
+     */
+    @Bean
+    @ConditionalOnProperty(value = "security.oauth2.enabled", havingValue = "true")
+    JwtDecoderFactory<ClientRegistration> idTokenDecoderFactory() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(10));
+        requestFactory.setReadTimeout(Duration.ofSeconds(10));
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
+
+        return registration -> {
+            String jwkSetUri = registration.getProviderDetails().getJwkSetUri();
+            String issuerUri = registration.getProviderDetails().getIssuerUri();
+
+            NimbusJwtDecoder decoder =
+                    NimbusJwtDecoder.withJwkSetUri(jwkSetUri).restOperations(restTemplate).build();
+
+            OAuth2TokenValidator<Jwt> defaultValidators =
+                    issuerUri != null
+                            ? JwtValidators.createDefaultWithIssuer(issuerUri)
+                            : JwtValidators.createDefault();
+            decoder.setJwtValidator(
+                    new DelegatingOAuth2TokenValidator<>(
+                            defaultValidators, new OidcIdTokenValidator(registration)));
+            return decoder;
         };
     }
 }
