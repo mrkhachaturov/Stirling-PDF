@@ -1451,7 +1451,7 @@ export interface SignPDFWithCertRequest {
   alias?: string;
   certFile?: File;
   /**
-   * SERVER: this server's own certificate, no file or password. Signer shown is the server's organisation, not the user; self-signed by default, so other PDF readers may show it unverified. PEM needs certFile+privateKeyFile, PKCS12/PFX p12File, JKS jksFile. WINDOWS_STORE/PKCS11: desktop app only.
+   * SERVER: this server's own certificate, no file or password. Signer shown is the server's organisation, not the user; self-signed by default, so other PDF readers may show it unverified. PEM needs certFile+privateKeyFile, PKCS12/PFX p12File, JKS jksFile. WINDOWS_STORE/PKCS11: desktop app only. USER_CERT: the signed-in user's personal certificate, no file or password.
    */
   certType:
     | "SERVER"
@@ -1460,7 +1460,12 @@ export interface SignPDFWithCertRequest {
     | "PFX"
     | "JKS"
     | "WINDOWS_STORE"
-    | "PKCS11";
+    | "PKCS11"
+    | "USER_CERT";
+  /**
+   * Base font size (points) for the visible signature text. Header and body lines scale from this value.
+   */
+  fontSize?: number;
   jksFile?: File;
   /**
    * The location where the PDF is signed. Omitted from the signature when not set
@@ -1493,6 +1498,10 @@ export interface SignPDFWithCertRequest {
    */
   reason?: string;
   /**
+   * Whether to draw the border around the visible signature stamp
+   */
+  showBorder?: boolean;
+  /**
    * Whether to visually show a signature logo along with the signature
    */
   showLogo?: boolean;
@@ -1500,6 +1509,26 @@ export interface SignPDFWithCertRequest {
    * Add a visible signature box on pageNumber showing the certificate's name, the date and the reason (if set).
    */
   showSignature?: boolean;
+  /**
+   * Height of the visible signature stamp, as a fraction (0-1) of the page height.
+   */
+  stampHeight?: number;
+  /**
+   * Width of the visible signature stamp, as a fraction (0-1) of the page width.
+   */
+  stampWidth?: number;
+  /**
+   * Left edge of the visible signature stamp, as a fraction (0-1) of the page width, measured from the left. When this and the other stamp coordinates are supplied the stamp is placed there instead of the automatic bottom-right position.
+   */
+  stampX?: number;
+  /**
+   * Top edge of the visible signature stamp, as a fraction (0-1) of the page height, measured from the top.
+   */
+  stampY?: number;
+  /**
+   * Colour applied to the whole visible signature (text and border), as a #RRGGBB hex string.
+   */
+  textColor?: string;
 }
 export interface SignatureValidationRequest {
   certFile?: File;
