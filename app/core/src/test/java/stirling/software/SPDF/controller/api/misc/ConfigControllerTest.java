@@ -108,6 +108,7 @@ class ConfigControllerTest {
                 context,
                 endpointConfiguration,
                 serverCertificateService,
+                null,
                 userService,
                 showAdmin,
                 licenseService,

@@ -73,6 +73,7 @@ class ConfigControllerMoreTest {
                 applicationContext,
                 endpointConfiguration,
                 serverCertificateService,
+                null,
                 userService,
                 showAdmin,
                 licenseService,

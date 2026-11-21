@@ -21,6 +21,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.multipart.MultipartFile;
 
 import stirling.software.SPDF.controller.api.security.CertSignController;
+import stirling.software.common.model.ApplicationProperties;
 import stirling.software.common.service.CustomPDFDocumentFactory;
 
 class PdfSigningServiceImplTest {
@@ -42,7 +43,8 @@ class PdfSigningServiceImplTest {
         @DisplayName("wires arguments through to CertSignController and returns the output bytes")
         void wiresArgsAndReturnsBytes() throws Exception {
             CustomPDFDocumentFactory factory = mock(CustomPDFDocumentFactory.class);
-            PdfSigningServiceImpl service = new PdfSigningServiceImpl(factory);
+            PdfSigningServiceImpl service =
+                    new PdfSigningServiceImpl(factory, new ApplicationProperties());
             KeyStore keystore = realKeystore();
             byte[] pdf = "%PDF-1.4 fake".getBytes();
 
@@ -63,7 +65,9 @@ class PdfSigningServiceImplTest {
                                                 eq("Alice"),
                                                 eq("London"),
                                                 eq("approval"),
-                                                eq(false)))
+                                                eq(false),
+                                                any(),
+                                                any()))
                         .thenAnswer(
                                 inv -> {
                                     ByteArrayOutputStream out = inv.getArgument(2);
@@ -97,7 +101,9 @@ class PdfSigningServiceImplTest {
                                         eq("Alice"),
                                         eq("London"),
                                         eq("approval"),
-                                        eq(false)));
+                                        eq(false),
+                                        any(),
+                                        any()));
 
                 // Exercise the private ByteArrayMultipartFile wrapper passed to sign().
                 MultipartFile wrapper = fileCaptor.getValue();
@@ -122,7 +128,8 @@ class PdfSigningServiceImplTest {
         @DisplayName("empty pdf bytes mark the wrapper as empty")
         void emptyWrapper() throws Exception {
             CustomPDFDocumentFactory factory = mock(CustomPDFDocumentFactory.class);
-            PdfSigningServiceImpl service = new PdfSigningServiceImpl(factory);
+            PdfSigningServiceImpl service =
+                    new PdfSigningServiceImpl(factory, new ApplicationProperties());
             ArgumentCaptor<MultipartFile> fileCaptor = ArgumentCaptor.forClass(MultipartFile.class);
 
             try (MockedStatic<CertSignController> signer = mockStatic(CertSignController.class)) {
@@ -138,7 +145,9 @@ class PdfSigningServiceImplTest {
                                                 any(),
                                                 any(),
                                                 any(),
-                                                org.mockito.ArgumentMatchers.anyBoolean()))
+                                                org.mockito.ArgumentMatchers.anyBoolean(),
+                                                any(),
+                                                any()))
                         .thenAnswer(inv -> null);
 
                 service.signWithKeystore(
@@ -164,7 +173,9 @@ class PdfSigningServiceImplTest {
                                         any(),
                                         any(),
                                         any(),
-                                        org.mockito.ArgumentMatchers.anyBoolean()));
+                                        org.mockito.ArgumentMatchers.anyBoolean(),
+                                        any(),
+                                        any()));
                 assertThat(fileCaptor.getValue().isEmpty()).isTrue();
                 assertThat(fileCaptor.getValue().getSize()).isZero();
             }
