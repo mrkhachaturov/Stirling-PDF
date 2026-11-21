@@ -6,7 +6,6 @@ import java.io.Serializable;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import lombok.Getter;
@@ -26,7 +25,7 @@ public class StoredFileBlob implements Serializable {
     @Column(name = "storage_key", nullable = false, length = 128)
     private String storageKey;
 
-    @Lob
+    // PostgreSQL bytea needs binary binding; @Lob binds a large-object OID instead.
     @Column(name = "data", nullable = false, columnDefinition = "BYTEA")
     private byte[] data;
 }

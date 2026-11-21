@@ -5,7 +5,6 @@ import java.io.Serializable;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import lombok.Getter;
@@ -52,7 +51,7 @@ public class PolicyAssetEntity implements Serializable {
     private long createdAt;
 
     // Ciphertext; JpaPolicyAssetStore is the only place these bytes are encrypted or decrypted.
-    @Lob
+    // PostgreSQL bytea needs binary binding; @Lob binds a large-object OID instead.
     @Column(name = "data", nullable = false, columnDefinition = "bytea")
     private byte[] data;
 }
